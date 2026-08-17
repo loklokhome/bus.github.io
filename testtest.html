@@ -1,21 +1,18 @@
-
-
 <!doctype html>
-<html>
+<html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <title>範例</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>testtest - 測試頁</title>
+  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans',sans-serif;padding:2rem;color:#111}</style>
 </head>
 <body>
-  <h1 id="title">Hello</h1>
-
+  <h1>測試成功：testtest.html</h1>
+  <p>如果你看到這段文字代表 Pages 可以正確顯示靜態 HTML。</p>
+  <p>時間：<span id="time"></span></p>
   <script>
-// 抓取天文台九天天氣預測
-fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc')
-  .then(response => response.json())
-  .then(data => {
-      console.log('九天天氣預測：', data.weatherForecast);
-      // 可在此將 data.weatherForecast 顯示在網頁上
-  });</script>
+    document.getElementById('time').textContent = new Date().toLocaleString();
+    console.log('testtest.html loaded');
+  </script>
 </body>
 </html>
