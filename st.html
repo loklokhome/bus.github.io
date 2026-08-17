@@ -33,6 +33,25 @@
             border-radius: 2px;
             margin: 30px 0;
         }
+        /* 全域頂部刷新按鈕 */
+        .global-refresh-wrap {
+            max-width: 600px;
+            margin: 0 auto 20px;
+        }
+        #globalRefreshBtn {
+            width: 100%;
+            padding: 14px;
+            font-size: 22px;
+            font-weight: bold;
+            background-color: #0071e3;
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+        #globalRefreshBtn:hover {
+            background-color: #0077ed;
+        }
 
         /* ========== 巴士模組樣式 ========== */
         .admin-panel {
@@ -84,16 +103,6 @@
         button:disabled {
             background-color: #b6b6b6;
             cursor: not-allowed;
-        }
-        .btn-refresh {
-            width: 100%;
-            padding: 12px;
-            font-size: 16px;
-            margin-bottom: 15px;
-            background-color: #34c759;
-        }
-        .btn-refresh:hover {
-            background-color: #30b64f;
         }
         .bus-card {
             background: #fff;
@@ -240,27 +249,18 @@
             background: #bb2d3b;
         }
         .status-bar {
-            display: flex;
-            flex-direction: column;
-            gap:10px;
-            align-items: center;
             font-size: 12px;
             color: #6c757d;
             margin-top: 10px;
         }
-        /* 已修改：置中、大字手動刷新按鈕 */
-        .stock-refresh-link {
-            display:block;
-            text-align:center;
-            font-size:24px;
-            font-weight:bold;
-            color:#0d6efd;
-            text-decoration:none;
-            padding:8px 0;
-        }
     </style>
 </head>
 <body>
+<!-- 全域頂部一鍵刷新 -->
+<div class="global-refresh-wrap">
+    <button id="globalRefreshBtn" onclick="refreshAllGlobal()">🔄 全域一鍵刷新（巴士 + 股票）</button>
+</div>
+
 <!-- 模組1：巴士到站追蹤 -->
 <div class="container">
     <h2>🚌 我的專屬巴士站</h2>
@@ -280,7 +280,7 @@
             </div>
         </div>
     </div>
-    <button class="btn-refresh" onclick="refreshAllETA()">🔄 刷新所有即時到站時間</button>
+    <!-- 已刪除原本獨立巴士刷新按鈕 -->
     <div id="busListZone"></div>
 </div>
 
@@ -306,12 +306,17 @@
     </table>
     <div class="status-bar">
         <span id="updateTime">初始化中...</span>
-        <!-- 改後：置中+大字 -->
-        <a href="#" onclick="fetchAllPrices(); return false;" class="stock-refresh-link">手動刷新</a>
+        <!-- 已刪除獨立手動刷新連結 -->
     </div>
 </div>
 
 <script>
+// 全域統一刷新函數
+async function refreshAllGlobal() {
+    await refreshAllETA();
+    await fetchAllPrices();
+}
+
 // ====================== 巴士JS邏輯 ======================
 let myStations = JSON.parse(localStorage.getItem('myBusStations')) || [
     { route: '273B', stopId: 'KMB_002631', stopName: '上水站' }
@@ -320,7 +325,7 @@ const stopNameCache = {};
 
 window.onload = function() {
     renderStationList();
-    refreshAllETA();
+    refreshAllGlobal();
 };
 
 function saveToStorage() {
@@ -542,7 +547,7 @@ function addStock() {
     if (!stockList.includes(symbol)) {
         stockList.push(symbol);
         saveList();
-        renderTable();
+        renderTable(); 
         fetchAllPrices();
     }
     input.value = '';
@@ -555,8 +560,8 @@ function deleteStock(index) {
     renderTable();
 }
 renderTable();
-fetchAllPrices();
-setInterval(fetchAllPrices, 30000);
+// 定時自動全域刷新維持不變
+setInterval(refreshAllGlobal, 30000);
 </script>
 </body>
 </html>
