@@ -1,2 +1,7 @@
-testtest
-01
+// 抓取天文台九天天氣預測
+fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc')
+  .then(response => response.json())
+  .then(data => {
+      console.log('九天天氣預測：', data.weatherForecast);
+      // 可在此將 data.weatherForecast 顯示在網頁上
+  });
