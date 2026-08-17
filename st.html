@@ -258,7 +258,7 @@
 <body>
 <!-- 全域頂部一鍵刷新 -->
 <div class="global-refresh-wrap">
-    <button id="globalRefreshBtn" onclick="refreshAllGlobal()">刷新</button>
+    <button type="button" id="globalRefreshBtn" onclick="refreshAllGlobal()">刷新</button>
 </div>
 
 <!-- 模組1：巴士到站追蹤 -->
@@ -269,18 +269,17 @@
         <div class="input-group">
             <div class="row">
                 <input type="text" id="routeInput" placeholder="輸入路線 (例: 273B 或 70K)" style="text-transform: uppercase;">
-                <button onclick="loadAllBusStops()">載入所有車站</button>
+                <button type="button" onclick="loadAllBusStops()">載入所有車站</button>
             </div>
             <div class="hint-text" id="loadHint">請先輸入路線並點擊「載入所有車站」</div>
             <div class="row">
                 <select id="stopSelect" disabled>
                     <option value="">-- 請先載入車站列表 --</option>
                 </select>
-                <button id="addBtn" onclick="addBusStop()" disabled>儲存車站</button>
+                <button type="button" id="addBtn" onclick="addBusStop()" disabled>儲存車站</button>
             </div>
         </div>
     </div>
-    <!-- 已刪除原本獨立巴士刷新按鈕 -->
     <div id="busListZone"></div>
 </div>
 
@@ -291,7 +290,7 @@
     <h2>📈 即時股票報價</h2>
     <div class="stock-input-group">
         <input type="text" id="symbolInput" placeholder="輸入代號 (例如: 0700.HK, AAPL)">
-        <button onclick="addStock()">新增</button>
+        <button type="button" onclick="addStock()">新增</button>
     </div>
     <div class="tip">提示：港股例 0700.HK 或直接入 700、美股 AAPL</div>
     <table>
@@ -306,15 +305,17 @@
     </table>
     <div class="status-bar">
         <span id="updateTime">初始化中...</span>
-        <!-- 已刪除獨立手動刷新連結 -->
     </div>
 </div>
 
 <script>
 // 全域統一刷新函數
-async function refreshAllGlobal() {
-    await refreshAllETA();
-    await fetchAllPrices();
+async function refreshAllGlobal(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    await Promise.all([
+        refreshAllETA(),
+        fetchAllPrices()
+    ]);
 }
 
 // ====================== 巴士JS邏輯 ======================
@@ -394,7 +395,7 @@ function renderStationList() {
         html += `
             <div class="bus-card" id="card-${index}">
                 <div class="bus-info">
-                    <button class="delete-btn" onclick="deleteStation(${index})">❌ 刪除</button>
+                    <button type="button" class="delete-btn" onclick="deleteStation(${index})">❌ 刪除</button>
                     <div><span class="bus-route">${item.route}</span></div>
                     <div class="station-name">${item.stopName}</div>
                 </div>
@@ -431,7 +432,7 @@ function deleteStation(index) {
 
 async function refreshAllETA() {
     if (myStations.length === 0) return;
-    myStations.forEach(async (item, index) => {
+    const tasks = myStations.map(async (item, index) => {
         const etaZone = document.getElementById(`eta-${index}`);
         if (!etaZone) return;
         try {
@@ -481,6 +482,7 @@ async function refreshAllETA() {
             etaZone.innerHTML = '<span style="font-size:14px; color:red;">錯誤</span>';
         }
     });
+    await Promise.all(tasks);
 }
 
 // ====================== 股票JS邏輯 ======================
@@ -489,13 +491,15 @@ let stockData = {};
 function saveList() {
     localStorage.setItem('autoStocks', JSON.stringify(stockList));
 }
+
 async function fetchPrice(symbol) {
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m`;
-    const proxyUrl = `https://script.google.com/macros/s/AKfycbw7sA56AYA3x4S3k42l2a24A45p1a23/exec?url=${encodeURIComponent(targetUrl)}`;
-    const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    // 使用穩定免費的代理跨過 CORS 限制並防止快取
+    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&_=${Date.now()}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+    
     try {
-        let response = await fetch(proxyUrl).catch(() => fetch(fallbackUrl));
-        if (!response.ok) throw new Error('網絡連線異常');
+        let response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('網路連線異常');
         const data = await response.json();
         const result = data.chart.result[0];
         const price = result.meta.regularMarketPrice;
@@ -504,9 +508,10 @@ async function fetchPrice(symbol) {
         return { name, price: `${currency} $${price.toFixed(2)}`, isError: false };
     } catch (error) {
         console.error(`獲取 ${symbol} 失敗:`, error);
-        return { name: symbol, price: '讀取失敗 (請刷新)', isError: true };
+        return { name: symbol, price: '讀取失敗', isError: true };
     }
 }
+
 async function fetchAllPrices() {
     document.getElementById('updateTime').innerText = '正在更新股價...';
     const fetchPromises = stockList.map(async (symbol) => {
@@ -517,6 +522,7 @@ async function fetchAllPrices() {
     const now = new Date();
     document.getElementById('updateTime').innerText = `最後更新: ${now.toLocaleTimeString()}`;
 }
+
 function renderTable() {
     const tbody = document.getElementById('stockTable');
     tbody.innerHTML = '';
@@ -532,11 +538,12 @@ function renderTable() {
                     <small style="color:#6c757d">${info.name !== symbol ? info.name : ''}</small>
                 </td>
                 <td class="${priceClass}">${info.price}</td>
-                <td><button class="del-btn" onclick="deleteStock(${index})">刪除</button></td>
+                <td><button type="button" class="del-btn" onclick="deleteStock(${index})">刪除</button></td>
             </tr>
         `;
     });
 }
+
 function addStock() {
     const input = document.getElementById('symbolInput');
     let symbol = input.value.trim().toUpperCase();
@@ -552,6 +559,7 @@ function addStock() {
     }
     input.value = '';
 }
+
 function deleteStock(index) {
     const symbol = stockList[index];
     stockList.splice(index, 1);
@@ -559,8 +567,9 @@ function deleteStock(index) {
     saveList();
     renderTable();
 }
+
 renderTable();
-// 定時自動全域刷新維持不變
+// 每 30 秒自動刷新
 setInterval(refreshAllGlobal, 30000);
 </script>
 </body>
