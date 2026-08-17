@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>簡易股票報價</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 500px; margin: 30px auto; padding: 0 15px; background: #f9f9f9; }
+    h2 { text-align: center; color: #333; }
+    .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    input { padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+    input[type="text"] { flex: 2; }
+    input[type="number"] { flex: 1; }
+    button { padding: 8px 15px; font-size: 14px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+    th { background: #f2f2f2; }
+    .price { font-weight: bold; color: #28a745; }
+    .del-btn { background: #dc3545; padding: 4px 8px; font-size: 12px; }
+    .del-btn:hover { background: #c82333; }
+  </style>
+</head>
+<body>
+
+  <h2>📈 我的股票報價</h2>
+
+  <div class="input-group">
+    <input type="text" id="stockName" placeholder="股票名稱 (例如: 騰訊)">
+    <input type="number" id="stockPrice" placeholder="價錢" step="0.01">
+    <button onclick="addStock()">新增</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>股票名稱</th>
+        <th>價錢 ($)</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="stockTable"></tbody>
+  </table>
+
+  <script>
+    // 初始化：讀取舊有數據
+    let stocks = JSON.parse(localStorage.getItem('myStocks')) || [
+      { name: '騰訊控股', price: 380.20 },
+      { name: '美團', price: 115.50 }
+    ];
+
+    function saveAndRender() {
+      localStorage.setItem('myStocks', JSON.stringify(stocks));
+      const tbody = document.getElementById('stockTable');
+      tbody.innerHTML = '';
+      
+      stocks.forEach((stock, index) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${stock.name}</td>
+            <td class="price">${Number(stock.price).toFixed(2)}</td>
+            <td><button class="del-btn" onclick="deleteStock(${index})">刪除</button></td>
+          </tr>
+        `;
+      });
+    }
+
+    function addStock() {
+      const name = document.getElementById('stockName').value.trim();
+      const price = document.getElementById('stockPrice').value;
+
+      if (!name || !price) {
+        alert('請輸入完整名稱與價錢！');
+        return;
+      }
+
+      stocks.push({ name, price: parseFloat(price) });
+      saveAndRender();
+
+      // 清空輸入框
+      document.getElementById('stockName').value = '';
+      document.getElementById('stockPrice').value = '';
+    }
+
+    function deleteStock(index) {
+      stocks.splice(index, 1);
+      saveAndRender();
+    }
+
+    // 首次載入
+    saveAndRender();
+  </script>
+
+</body>
+</html>
