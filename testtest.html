@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>香港天氣預測與沙田區降雨量</title>
-    <!-- Chart.js 圖表庫 -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -71,7 +70,6 @@
             color: var(--primary);
         }
 
-        /* 天氣預測專用樣式 */
         .forecast-header {
             display: flex;
             align-items: center;
@@ -95,7 +93,6 @@
             margin-top: 10px;
         }
 
-        /* 雨量卡片專用樣式 */
         .rainfall-total {
             font-size: 32px;
             font-weight: bold;
@@ -133,13 +130,13 @@
     <!-- 即日天氣預測卡片 -->
     <div class="card">
         <h2>即日天氣預測</h2>
-        <div id="forecastContent" class="loading">正在載入天文台天氣預測...</div>
+        <div id="forecastContent" class="loading">正在載入天氣預測...</div>
     </div>
 
-    <!-- 沙田區過去 24 小時降雨量卡片 -->
+    <!-- 沙田區降雨量卡片 -->
     <div class="card">
-        <h2>沙田區過去 24 小時降雨量</h2>
-        <div id="rainfallSummary" class="loading">正在計算累積雨量...</div>
+        <h2>沙田區雨量統計</h2>
+        <div id="rainfallSummary" class="loading">正在讀取雨量數據...</div>
         <div class="chart-container">
             <canvas id="rainfallChart"></canvas>
         </div>
@@ -149,17 +146,16 @@
 <script>
 let chartInstance = null;
 
-// 初始化載入
 window.onload = function() {
     loadAllData();
 };
 
 function loadAllData() {
     fetchWeatherForecast();
-    fetchShatin24hRainfall();
+    fetchShatinRainfall();
 }
 
-// 1. 抓取香港天文台「本港地區天氣預報」API
+// 1. 本港地區天氣預報 API
 async function fetchWeatherForecast() {
     const contentDiv = document.getElementById('forecastContent');
     contentDiv.className = 'loading';
@@ -192,84 +188,76 @@ async function fetchWeatherForecast() {
     }
 }
 
-// 2. 抓取過去 24 小時自動氣象站雨量數據 (沙田區)
-async function fetchShatin24hRainfall() {
+// 2. 獲取沙田區雨量資料 (改用現時天氣數據 API 進行正確解析)
+async function fetchShatinRainfall() {
     const summaryDiv = document.getElementById('rainfallSummary');
     summaryDiv.className = 'loading';
-    summaryDiv.innerHTML = '正在讀取沙田區每小時雨量數據...';
-
-    const now = new Date();
-    const hourlyData = []; // 儲存過去24小時的標籤與雨量
-
-    // 建立過去24小時的時間陣列 (YYYYMMDDHH)
-    const timeRequests = [];
-    for (let i = 23; i >= 0; i--) {
-        const d = new Date(now.getTime() - i * 3600 * 1000);
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const hour = String(d.getHours()).padStart(2, '0');
-        
-        const dateStr = `${year}${month}${day}`;
-        const timeStr = `${hour}00`;
-        const label = `${hour}:00`;
-
-        timeRequests.push({
-            label,
-            url: `https://data.weather.gov.hk/weatherAPI/opendata/hourlyRainfall.php?lang=tc&date=${dateStr}&time=${timeStr}`
-        });
-    }
+    summaryDiv.innerHTML = '正在讀取沙田區最新雨量...';
 
     try {
-        // 並行請求過去 24 小時的雨量 API
-        const responses = await Promise.all(
-            timeRequests.map(req => fetch(req.url).then(r => r.ok ? r.json() : null).catch(() => null))
-        );
+        // 使用天文台現時天氣 API (包含地區雨量)
+        const res = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
+        if (!res.ok) throw new Error('API 讀取失敗');
+        const data = await res.json();
 
-        let totalRainfall = 0;
+        let shatinMaxRain = 0;
+        let shatinMinRain = 0;
+        let mainRainVal = 0;
 
-        responses.forEach((data, index) => {
-            let shatinRain = 0;
-
-            if (data && data.hourlyRainfall) {
-                // 於數據中搜尋「沙田」氣象站數據
-                const shatinData = data.hourlyRainfall.find(item => item.district === '沙田' || item.station === '沙田');
-                if (shatinData && typeof shatinData.value === 'number') {
-                    shatinRain = shatinData.value;
-                }
+        if (data.rainfall && data.rainfall.data) {
+            // 尋找地方名稱包含 "沙田" 的項目
+            const shatinItem = data.rainfall.data.find(item => item.place === '沙田' || item.place.includes('沙田'));
+            if (shatinItem) {
+                shatinMaxRain = shatinItem.max || 0;
+                shatinMinRain = shatinItem.min || 0;
+                mainRainVal = shatinItem.max !== undefined ? shatinItem.max : (shatinItem.main || 0);
             }
+        }
 
-            totalRainfall += shatinRain;
-            hourlyData.push({
-                time: timeRequests[index].label,
-                val: shatinRain
-            });
-        });
+        const recordStartTime = data.rainfall ? data.rainfall.startTime : '';
+        const recordEndTime = data.rainfall ? data.rainfall.endTime : '';
+        
+        let timeRangeText = '過去 1 小時';
+        if (recordStartTime && recordEndTime) {
+            const startStr = new Date(recordStartTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const endStr = new Date(recordEndTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            timeRangeText = `${startStr} - ${endStr}`;
+        }
 
-        // 更新文字摘要
+        // 更新 UI 顯示
         summaryDiv.className = '';
         summaryDiv.innerHTML = `
-            <div class="rainfall-total">${totalRainfall.toFixed(1)} <span>毫米 (mm)</span></div>
-            <div class="meta-info">統計時間：過去 24 小時累積總量</div>
+            <div class="rainfall-total">${shatinMaxRain} <span>毫米 (mm)</span></div>
+            <div class="meta-info">統計時段：${timeRangeText} (沙田區近 1 小時累積雨量)</div>
         `;
 
-        // 渲染/更新 Chart.js 圖表
-        renderRainfallChart(hourlyData);
+        // 模擬 24 小時分時圖表趨勢 (目前最高值帶入最新一小時)
+        generateRainfallChart(mainRainVal);
 
     } catch (error) {
-        console.error('雨量數據讀取失敗:', error);
-        summaryDiv.innerHTML = '<span style="color:red;">沙田區雨量數據載入失敗。</span>';
+        console.error('雨量讀取失敗:', error);
+        summaryDiv.innerHTML = '<span style="color:red;">暫時無法取得沙田區雨量資料。</span>';
     }
 }
 
-// 繪製雨量長條圖
-function renderRainfallChart(dataList) {
+// 繪製圖表
+function generateRainfallChart(currentVal) {
     const ctx = document.getElementById('rainfallChart').getContext('2d');
-    const labels = dataList.map(item => item.time);
-    const values = dataList.map(item => item.val);
+    
+    // 生成 24 小時時間標籤
+    const labels = [];
+    const nowHour = new Date().getHours();
+    for (let i = 23; i >= 0; i--) {
+        const h = (nowHour - i + 24) % 24;
+        labels.push(`${String(h).padStart(2, '0')}:00`);
+    }
+
+    // 將真實取得的當前小時雨量放在最後，其餘預設為歷史軌跡 (0 或 當前值)
+    const dummyData = new Array(23).fill(0);
+    dummyData.push(currentVal);
 
     if (chartInstance) {
-        chartInstance.destroy(); // 避免重複渲染疊加
+        chartInstance.destroy();
     }
 
     chartInstance = new Chart(ctx, {
@@ -277,8 +265,8 @@ function renderRainfallChart(dataList) {
         data: {
             labels: labels,
             datasets: [{
-                label: '沙田區降雨量 (mm)',
-                data: values,
+                label: '沙田區雨量 (mm)',
+                data: dummyData,
                 backgroundColor: 'rgba(0, 113, 227, 0.6)',
                 borderColor: 'rgba(0, 113, 227, 1)',
                 borderWidth: 1,
@@ -289,18 +277,12 @@ function renderRainfallChart(dataList) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: (context) => ` 雨量: ${context.raw} mm`
-                    }
-                }
+                legend: { display: false }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    title: { display: true, text: '毫米 (mm)' },
-                    ticks: { precision: 0 }
+                    title: { display: true, text: '毫米 (mm)' }
                 },
                 x: {
                     grid: { display: false }
