@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 關鍵：解除 Referer 限制，允許繞過天文台防盜鏈直接載入圖片 -->
+    <meta name="referrer" content="no-referrer">
     <title>香港天氣預測與過去24小時雨量分佈圖</title>
     <style>
         :root {
@@ -69,7 +71,7 @@
             color: var(--primary);
         }
 
-        /* 天氣預測樣式 */
+        /* 天氣預測專用樣式 */
         .forecast-header {
             display: flex;
             align-items: center;
@@ -93,12 +95,11 @@
             margin-top: 10px;
         }
 
-        /* 雨量圖與代理圖片容器 */
+        /* 雨量圖容器樣式 */
         .map-container {
             width: 100%;
             text-align: center;
             margin-top: 15px;
-            min-height: 350px;
         }
 
         .map-image {
@@ -109,16 +110,21 @@
             border: 1px solid #e5e5e5;
         }
 
-        .map-iframe {
-            width: 100%;
-            height: 520px;
-            border: none;
-            border-radius: 8px;
-        }
-
         .loading {
             color: var(--subtext);
             font-style: italic;
+        }
+
+        .source-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: var(--primary);
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .source-link:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -140,11 +146,10 @@
     <div class="card">
         <h2>過去二十四小時本港雨量分佈圖</h2>
         <div class="map-container">
-            <!-- 透過圖像代理繞過防盜鏈，若失敗則備用 iframe -->
-            <img id="rainfallMap" class="map-image" src="" alt="過去二十四小時本港雨量分佈圖" onerror="switchToIframe()">
-            <iframe id="rainfallIframe" class="map-iframe" src="" style="display: none;"></iframe>
+            <img id="rainfallMap" class="map-image" src="" alt="過去二十四小時本港雨量分佈圖">
         </div>
         <div class="meta-info">資料來源：香港天文台</div>
+        <a class="source-link" href="https://www.hko.gov.hk/tc/wxinfo/rainfall/isohyet_past24hr.shtml" target="_blank" rel="noopener">前往天文台查看完整說明 ↗</a>
     </div>
 </div>
 
@@ -158,7 +163,7 @@ function loadAllData() {
     updateRainfallMap();
 }
 
-// 1. 讀取香港天文台天氣預測
+// 1. 讀取香港天文台即日天氣預測 API
 async function fetchWeatherForecast() {
     const contentDiv = document.getElementById('forecastContent');
     contentDiv.className = 'loading';
@@ -189,29 +194,13 @@ async function fetchWeatherForecast() {
     }
 }
 
-// 2. 載入過去 24 小時雨量圖（使用代理地址解決防盜鏈問題）
+// 2. 載入過去 24 小時雨量分佈圖
 function updateRainfallMap() {
     const mapImg = document.getElementById('rainfallMap');
-    const iframe = document.getElementById('rainfallIframe');
     const timestamp = new Date().getTime();
-
-    // 重設顯示
-    mapImg.style.display = 'block';
-    iframe.style.display = 'none';
-
-    // 使用圖像代理存取官方圖片（繞過 Referer 防盜鏈限制）
-    const targetImageUrl = `https://www.hko.gov.hk/wxinfo/rainfall/rf24_tc.gif?v=${timestamp}`;
-    mapImg.src = `https://wsrv.nl/?url=${encodeURIComponent(targetImageUrl)}`;
-}
-
-// 防錯機制：若代理載入失敗，自動切換為內嵌網頁
-function switchToIframe() {
-    const mapImg = document.getElementById('rainfallMap');
-    const iframe = document.getElementById('rainfallIframe');
     
-    mapImg.style.display = 'none';
-    iframe.style.display = 'block';
-    iframe.src = 'https://www.hko.gov.hk/tc/wxinfo/rainfall/isohyet_past24hr.shtml';
+    // 直連天文台雨量圖網址 (配合 <meta name="referrer" content="no-referrer"> 可順利讀取)
+    mapImg.src = `https://www.hko.gov.hk/wxinfo/rainfall/rf24_tc.gif?v=${timestamp}`;
 }
 </script>
 
