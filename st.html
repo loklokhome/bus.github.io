@@ -256,15 +256,15 @@
 </div>
 
 <div class="container">
-    <h2>🚌 我的專屬巴士站</h2>
+    <h2>🚌 我的專屬巴士站（個10秒更新）</h2>
     <div class="admin-panel">
         <h3>新增追蹤車站</h3>
         <div class="input-group">
             <div class="row">
                 <input type="text" id="routeInput" placeholder="輸入路線 (例: 273B 或 70K)" style="text-transform: uppercase;">
-                <button type="button" onclick="loadAllBusStops()">載入所有車站</button>
+                <button type="button" onclick="loadAllBusStops()">載入車站</button>
             </div>
-            <div class="hint-text" id="loadHint">請先輸入路線並點擊「載入所有車站」</div>
+            <div class="hint-text" id="loadHint">請先輸入路線並點擊「載入車站」</div>
             <div class="row">
                 <select id="stopSelect" disabled>
                     <option value="">-- 請先載入車站列表 --</option>
@@ -588,7 +588,7 @@ function deleteStock(index) {
 }
 
 renderTable();
-setInterval(refreshAllGlobal, 30000);
+setInterval(refreshAllGlobal, 10000);
 </script>
 </body>
 </html>
