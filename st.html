@@ -35,6 +35,7 @@
         .global-refresh-wrap {
             max-width: 300px;
             margin: 0 auto 20px;
+            text-align: center;
         }
         #globalRefreshBtn {
             width: 100%;
@@ -49,6 +50,13 @@
         }
         #globalRefreshBtn:hover {
             background-color: #0077ed;
+        }
+        /* 新增的最頂部更新時間樣式 */
+        .last-update-bar {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #6e6e73;
+            font-weight: 500;
         }
         .admin-panel {
             background: #f9f9f9;
@@ -253,18 +261,19 @@
 
 <div class="global-refresh-wrap">
     <button type="button" id="globalRefreshBtn" onclick="refreshAllGlobal()">刷新</button>
+    <div class="last-update-bar" id="topUpdateTime">最後更新：初始化中...</div>
 </div>
 
 <div class="container">
-    <h2>🚌 我的專屬巴士站（個10秒更新）</h2>
+    <h2>🚌 巴士站（每10秒更新）</h2>
     <div class="admin-panel">
-        <h3>新增追蹤車站</h3>
+        <h3>新增車站</h3>
         <div class="input-group">
             <div class="row">
                 <input type="text" id="routeInput" placeholder="輸入路線 (例: 273B 或 70K)" style="text-transform: uppercase;">
                 <button type="button" onclick="loadAllBusStops()">載入車站</button>
             </div>
-            <div class="hint-text" id="loadHint">請先輸入路線並點擊「載入車站」</div>
+            <div class="hint-text" id="loadHint">輸入路線並點擊「載入車站」</div>
             <div class="row">
                 <select id="stopSelect" disabled>
                     <option value="">-- 請先載入車站列表 --</option>
@@ -303,10 +312,20 @@
 <script>
 async function refreshAllGlobal(e) {
     if (e && e.preventDefault) e.preventDefault();
+    
+    // 更新頂部提示文字為刷新中
+    const topTimeEl = document.getElementById('topUpdateTime');
+    if (topTimeEl) topTimeEl.innerText = '最後更新：更新中...';
+    
     await Promise.all([
         refreshAllETA(),
         fetchAllPrices()
     ]);
+
+    // 所有數據更新完畢後更新最頂部的時間
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    if (topTimeEl) topTimeEl.innerText = `最後更新：${timeString}`;
 }
 
 // ====================== 巴士JS邏輯 ======================
