@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>綜合面板｜巴士到站 + 港股美股報價</title>
     <style>
-        /* 全域通用樣式 */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             padding: 15px;
@@ -33,7 +32,6 @@
             border-radius: 2px;
             margin: 30px 0;
         }
-        /* 全域頂部刷新按鈕 */
         .global-refresh-wrap {
             max-width: 300px;
             margin: 0 auto 20px;
@@ -52,8 +50,6 @@
         #globalRefreshBtn:hover {
             background-color: #0077ed;
         }
-
-        /* ========== 巴士模組樣式 ========== */
         .admin-panel {
             background: #f9f9f9;
             padding: 15px;
@@ -175,8 +171,6 @@
             float: right;
             margin-top: -10px;
         }
-
-        /* ========== 股票模組樣式 ========== */
         .stock-input-group {
             display: flex;
             gap: 8px;
@@ -256,12 +250,11 @@
     </style>
 </head>
 <body>
-<!-- 全域頂部一鍵刷新 -->
+
 <div class="global-refresh-wrap">
     <button type="button" id="globalRefreshBtn" onclick="refreshAllGlobal()">刷新</button>
 </div>
 
-<!-- 模組1：巴士到站追蹤 -->
 <div class="container">
     <h2>🚌 我的專屬巴士站</h2>
     <div class="admin-panel">
@@ -285,7 +278,6 @@
 
 <div class="divider"></div>
 
-<!-- 模組2：股票報價 -->
 <div class="container">
     <h2>📈 即時股票報價</h2>
     <div class="stock-input-group">
@@ -309,7 +301,6 @@
 </div>
 
 <script>
-// 全域統一刷新函數
 async function refreshAllGlobal(e) {
     if (e && e.preventDefault) e.preventDefault();
     await Promise.all([
@@ -485,40 +476,68 @@ async function refreshAllETA() {
     await Promise.all(tasks);
 }
 
-// ====================== 股票JS邏輯 ======================
+// ====================== 優化後的股票 JS 邏輯 ======================
 let stockList = JSON.parse(localStorage.getItem('autoStocks')) || ['0700.HK', '09988.HK', 'AAPL'];
 let stockData = {};
+
 function saveList() {
     localStorage.setItem('autoStocks', JSON.stringify(stockList));
 }
 
-async function fetchPrice(symbol) {
-    // 使用穩定免費的代理跨過 CORS 限制並防止快取
-    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&_=${Date.now()}`;
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-    
+// 帶有 Timeout 限制的 fetch
+async function fetchWithTimeout(url, options = {}, timeout = 4000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
     try {
-        let response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('網路連線異常');
-        const data = await response.json();
-        const result = data.chart.result[0];
-        const price = result.meta.regularMarketPrice;
-        const currency = result.meta.currency;
-        const name = result.meta.shortName || result.meta.symbol;
-        return { name, price: `${currency} $${price.toFixed(2)}`, isError: false };
-    } catch (error) {
-        console.error(`獲取 ${symbol} 失敗:`, error);
-        return { name: symbol, price: '讀取失敗', isError: true };
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return response;
+    } catch (e) {
+        clearTimeout(id);
+        throw e;
     }
+}
+
+async function fetchPrice(symbol) {
+    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&_=${Date.now()}`;
+    
+    // 多代理備用機制：優先試用 Fast CORS 代理
+    const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
+    ];
+
+    for (const proxyUrl of proxies) {
+        try {
+            const response = await fetchWithTimeout(proxyUrl, {}, 3500);
+            if (!response.ok) continue;
+            const data = await response.json();
+            const result = data?.chart?.result?.[0];
+            if (result && result.meta) {
+                const price = result.meta.regularMarketPrice;
+                const currency = result.meta.currency || '';
+                const name = result.meta.shortName || result.meta.symbol;
+                return { name, price: `${currency} $${price.toFixed(2)}`, isError: false };
+            }
+        } catch (e) {
+            // 該代理失敗，自動嘗試下一組
+            continue;
+        }
+    }
+    return { name: symbol, price: '讀取超時/失敗', isError: true };
 }
 
 async function fetchAllPrices() {
     document.getElementById('updateTime').innerText = '正在更新股價...';
+    
+    // 一次性同時發送所有股票請求，並設定總限時，大幅提升速度
     const fetchPromises = stockList.map(async (symbol) => {
         stockData[symbol] = await fetchPrice(symbol);
-        renderTable();
     });
+
     await Promise.all(fetchPromises);
+    renderTable();
+    
     const now = new Date();
     document.getElementById('updateTime').innerText = `最後更新: ${now.toLocaleTimeString()}`;
 }
@@ -569,7 +588,6 @@ function deleteStock(index) {
 }
 
 renderTable();
-// 每 30 秒自動刷新
 setInterval(refreshAllGlobal, 30000);
 </script>
 </body>
