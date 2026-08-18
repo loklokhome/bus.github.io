@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>香港天氣預測與沙田區降雨量</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>香港天氣預測與過去24小時雨量分佈圖</title>
     <style>
         :root {
             --primary: #0071e3;
@@ -23,7 +22,7 @@
         }
 
         .container {
-            max-width: 700px;
+            max-width: 750px;
             margin: 0 auto;
         }
 
@@ -70,6 +69,7 @@
             color: var(--primary);
         }
 
+        /* 天氣預測卡片樣式 */
         .forecast-header {
             display: flex;
             align-items: center;
@@ -93,29 +93,36 @@
             margin-top: 10px;
         }
 
-        .rainfall-total {
-            font-size: 32px;
-            font-weight: bold;
-            color: var(--text);
-            margin: 10px 0;
-        }
-
-        .rainfall-total span {
-            font-size: 16px;
-            color: var(--subtext);
-            font-weight: normal;
-        }
-
-        .chart-container {
-            position: relative;
-            height: 250px;
+        /* 雨量圖卡片樣式 */
+        .map-container {
             width: 100%;
+            text-align: center;
             margin-top: 15px;
+        }
+
+        .map-image {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
         }
 
         .loading {
             color: var(--subtext);
             font-style: italic;
+        }
+
+        .source-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: var(--primary);
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .source-link:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -123,7 +130,7 @@
 
 <div class="container">
     <header>
-        <h1>🌤️ 天氣實時資訊</h1>
+        <h1>🌤️ 香港天氣實時資訊</h1>
         <button class="refresh-btn" type="button" onclick="loadAllData()">更新數據</button>
     </header>
 
@@ -133,29 +140,28 @@
         <div id="forecastContent" class="loading">正在載入天氣預測...</div>
     </div>
 
-    <!-- 沙田區降雨量卡片 -->
+    <!-- 過去二十四小時本港雨量分佈圖卡片 -->
     <div class="card">
-        <h2>沙田區雨量統計</h2>
-        <div id="rainfallSummary" class="loading">正在讀取雨量數據...</div>
-        <div class="chart-container">
-            <canvas id="rainfallChart"></canvas>
+        <h2>過去二十四小時本港雨量分佈圖</h2>
+        <div class="map-container">
+            <img id="rainfallMap" class="map-image" src="" alt="過去二十四小時本港雨量分佈圖">
         </div>
+        <div class="meta-info">資料來源：香港天文台</div>
+        <a class="source-link" href="https://www.hko.gov.hk/tc/wxinfo/rainfall/isohyet_past24hr.shtml" target="_blank" rel="noopener">前往天文台查看詳細說明 ↗</a>
     </div>
 </div>
 
 <script>
-let chartInstance = null;
-
 window.onload = function() {
     loadAllData();
 };
 
 function loadAllData() {
     fetchWeatherForecast();
-    fetchShatinRainfall();
+    updateRainfallMap();
 }
 
-// 1. 本港地區天氣預報 API
+// 1. 讀取香港天文台即日天氣預測
 async function fetchWeatherForecast() {
     const contentDiv = document.getElementById('forecastContent');
     contentDiv.className = 'loading';
@@ -171,7 +177,8 @@ async function fetchWeatherForecast() {
         const iconUrl = iconCode ? `https://www.hko.gov.hk/images/HKOWxIcon/pic${iconCode}.png` : '';
         const updateTime = data.updateTime ? new Date(data.updateTime).toLocaleString('zh-HK') : '';
 
-        let html = `
+        contentDiv.className = '';
+        contentDiv.innerHTML = `
             <div class="forecast-header">
                 ${iconUrl ? `<img class="forecast-icon" src="${iconUrl}" alt="天氣圖示">` : ''}
                 <div class="forecast-desc">${forecastDesc}</div>
@@ -179,117 +186,18 @@ async function fetchWeatherForecast() {
             ${data.outlook ? `<p style="font-size:14px; color:#555;"><strong>展望：</strong>${data.outlook}</p>` : ''}
             <div class="meta-info">更新時間：${updateTime}</div>
         `;
-
-        contentDiv.className = '';
-        contentDiv.innerHTML = html;
     } catch (error) {
-        console.error('天氣預測讀取失敗:', error);
+        console.error(error);
         contentDiv.innerHTML = '<span style="color:red;">天氣預測載入失敗，請稍後重試。</span>';
     }
 }
 
-// 2. 獲取沙田區雨量資料 (改用現時天氣數據 API 進行正確解析)
-async function fetchShatinRainfall() {
-    const summaryDiv = document.getElementById('rainfallSummary');
-    summaryDiv.className = 'loading';
-    summaryDiv.innerHTML = '正在讀取沙田區最新雨量...';
-
-    try {
-        // 使用天文台現時天氣 API (包含地區雨量)
-        const res = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
-        if (!res.ok) throw new Error('API 讀取失敗');
-        const data = await res.json();
-
-        let shatinMaxRain = 0;
-        let shatinMinRain = 0;
-        let mainRainVal = 0;
-
-        if (data.rainfall && data.rainfall.data) {
-            // 尋找地方名稱包含 "沙田" 的項目
-            const shatinItem = data.rainfall.data.find(item => item.place === '沙田' || item.place.includes('沙田'));
-            if (shatinItem) {
-                shatinMaxRain = shatinItem.max || 0;
-                shatinMinRain = shatinItem.min || 0;
-                mainRainVal = shatinItem.max !== undefined ? shatinItem.max : (shatinItem.main || 0);
-            }
-        }
-
-        const recordStartTime = data.rainfall ? data.rainfall.startTime : '';
-        const recordEndTime = data.rainfall ? data.rainfall.endTime : '';
-        
-        let timeRangeText = '過去 1 小時';
-        if (recordStartTime && recordEndTime) {
-            const startStr = new Date(recordStartTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const endStr = new Date(recordEndTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            timeRangeText = `${startStr} - ${endStr}`;
-        }
-
-        // 更新 UI 顯示
-        summaryDiv.className = '';
-        summaryDiv.innerHTML = `
-            <div class="rainfall-total">${shatinMaxRain} <span>毫米 (mm)</span></div>
-            <div class="meta-info">統計時段：${timeRangeText} (沙田區近 1 小時累積雨量)</div>
-        `;
-
-        // 模擬 24 小時分時圖表趨勢 (目前最高值帶入最新一小時)
-        generateRainfallChart(mainRainVal);
-
-    } catch (error) {
-        console.error('雨量讀取失敗:', error);
-        summaryDiv.innerHTML = '<span style="color:red;">暫時無法取得沙田區雨量資料。</span>';
-    }
-}
-
-// 繪製圖表
-function generateRainfallChart(currentVal) {
-    const ctx = document.getElementById('rainfallChart').getContext('2d');
-    
-    // 生成 24 小時時間標籤
-    const labels = [];
-    const nowHour = new Date().getHours();
-    for (let i = 23; i >= 0; i--) {
-        const h = (nowHour - i + 24) % 24;
-        labels.push(`${String(h).padStart(2, '0')}:00`);
-    }
-
-    // 將真實取得的當前小時雨量放在最後，其餘預設為歷史軌跡 (0 或 當前值)
-    const dummyData = new Array(23).fill(0);
-    dummyData.push(currentVal);
-
-    if (chartInstance) {
-        chartInstance.destroy();
-    }
-
-    chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: '沙田區雨量 (mm)',
-                data: dummyData,
-                backgroundColor: 'rgba(0, 113, 227, 0.6)',
-                borderColor: 'rgba(0, 113, 227, 1)',
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: { display: true, text: '毫米 (mm)' }
-                },
-                x: {
-                    grid: { display: false }
-                }
-            }
-        }
-    });
+// 2. 載入並更新過去 24 小時雨量分佈圖（防快取機制）
+function updateRainfallMap() {
+    const mapImg = document.getElementById('rainfallMap');
+    // 加入時間戳記 (Timestamp) 確保每次按重新整理都能讀取天文台最新圖片
+    const timestamp = new Date().getTime();
+    mapImg.src = `https://www.hko.gov.hk/wxinfo/rainfall/rf24_tc.gif?v=${timestamp}`;
 }
 </script>
 
