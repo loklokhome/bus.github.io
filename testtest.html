@@ -1,85 +1,315 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>testtest - 測試頁（含 fallback）</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans',sans-serif;padding:2rem;color:#111}
-    .card{background:#fff;border:1px solid #eee;padding:1rem;border-radius:8px;max-width:800px}
-    .muted{color:#666}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>香港天氣預測與沙田區降雨量</title>
+    <!-- Chart.js 圖表庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #0071e3;
+            --bg: #f5f5f7;
+            --card-bg: #ffffff;
+            --text: #1d1d1f;
+            --subtext: #86868b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0;
+        }
+
+        .refresh-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+
+        .refresh-btn:hover {
+            opacity: 0.9;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .card h2 {
+            font-size: 18px;
+            margin-top: 0;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 8px;
+            color: var(--primary);
+        }
+
+        /* 天氣預測專用樣式 */
+        .forecast-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .forecast-icon {
+            width: 60px;
+            height: 60px;
+        }
+
+        .forecast-desc {
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .meta-info {
+            font-size: 12px;
+            color: var(--subtext);
+            margin-top: 10px;
+        }
+
+        /* 雨量卡片專用樣式 */
+        .rainfall-total {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--text);
+            margin: 10px 0;
+        }
+
+        .rainfall-total span {
+            font-size: 16px;
+            color: var(--subtext);
+            font-weight: normal;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 250px;
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .loading {
+            color: var(--subtext);
+            font-style: italic;
+        }
+    </style>
 </head>
 <body>
-  <div class="card">
-    <h1>testtest（含 fallback 的穩定版本）</h1>
-    <p class="muted">下方會顯示天文台九天天氣預報；若無法取得資料，會顯示友善的錯誤或保留靜態內容。</p>
 
-    <div id="fallback">
-      <p>暫時顯示靜態內容：測試成功。如果 fetch 失敗，你仍會看到這段文字。</p>
+<div class="container">
+    <header>
+        <h1>🌤️ 天氣實時資訊</h1>
+        <button class="refresh-btn" type="button" onclick="loadAllData()">更新數據</button>
+    </header>
+
+    <!-- 即日天氣預測卡片 -->
+    <div class="card">
+        <h2>即日天氣預測</h2>
+        <div id="forecastContent" class="loading">正在載入天文台天氣預測...</div>
     </div>
 
-    <div id="result" style="margin-top:1rem;display:none">
-      <h2>九天天氣預報</h2>
-      <ul id="forecastList"></ul>
+    <!-- 沙田區過去 24 小時降雨量卡片 -->
+    <div class="card">
+        <h2>沙田區過去 24 小時降雨量</h2>
+        <div id="rainfallSummary" class="loading">正在計算累積雨量...</div>
+        <div class="chart-container">
+            <canvas id="rainfallChart"></canvas>
+        </div>
     </div>
+</div>
 
-    <div id="error" style="margin-top:1rem;display:none;color:#a33"></div>
+<script>
+let chartInstance = null;
 
-    <p class="muted" style="margin-top:1rem">時間：<span id="time"></span></p>
-  </div>
+// 初始化載入
+window.onload = function() {
+    loadAllData();
+};
 
-  <script>
-    // 顯示時間（立即可見）
-    document.getElementById('time').textContent = new Date().toLocaleString();
+function loadAllData() {
+    fetchWeatherForecast();
+    fetchShatin24hRainfall();
+}
 
-    // helper: fetch with timeout
-    function fetchWithTimeout(url, options = {}, timeout = 8000) {
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('timeout')), timeout);
-        fetch(url, options)
-          .then(response => {
-            clearTimeout(timer);
-            resolve(response);
-          })
-          .catch(err => {
-            clearTimeout(timer);
-            reject(err);
-          });
-      });
+// 1. 抓取香港天文台「本港地區天氣預報」API
+async function fetchWeatherForecast() {
+    const contentDiv = document.getElementById('forecastContent');
+    contentDiv.className = 'loading';
+    contentDiv.innerHTML = '正在載入天文台天氣預測...';
+
+    try {
+        const response = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=flw&lang=tc');
+        if (!response.ok) throw new Error('網絡請求異常');
+        const data = await response.json();
+
+        const forecastDesc = data.forecastDesc || '暫無預報內容';
+        const iconCode = data.forecastIcon ? data.forecastIcon[0] : null;
+        const iconUrl = iconCode ? `https://www.hko.gov.hk/images/HKOWxIcon/pic${iconCode}.png` : '';
+        const updateTime = data.updateTime ? new Date(data.updateTime).toLocaleString('zh-HK') : '';
+
+        let html = `
+            <div class="forecast-header">
+                ${iconUrl ? `<img class="forecast-icon" src="${iconUrl}" alt="天氣圖示">` : ''}
+                <div class="forecast-desc">${forecastDesc}</div>
+            </div>
+            ${data.outlook ? `<p style="font-size:14px; color:#555;"><strong>展望：</strong>${data.outlook}</p>` : ''}
+            <div class="meta-info">更新時間：${updateTime}</div>
+        `;
+
+        contentDiv.className = '';
+        contentDiv.innerHTML = html;
+    } catch (error) {
+        console.error('天氣預測讀取失敗:', error);
+        contentDiv.innerHTML = '<span style="color:red;">天氣預測載入失敗，請稍後重試。</span>';
+    }
+}
+
+// 2. 抓取過去 24 小時自動氣象站雨量數據 (沙田區)
+async function fetchShatin24hRainfall() {
+    const summaryDiv = document.getElementById('rainfallSummary');
+    summaryDiv.className = 'loading';
+    summaryDiv.innerHTML = '正在讀取沙田區每小時雨量數據...';
+
+    const now = new Date();
+    const hourlyData = []; // 儲存過去24小時的標籤與雨量
+
+    // 建立過去24小時的時間陣列 (YYYYMMDDHH)
+    const timeRequests = [];
+    for (let i = 23; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 3600 * 1000);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hour = String(d.getHours()).padStart(2, '0');
+        
+        const dateStr = `${year}${month}${day}`;
+        const timeStr = `${hour}00`;
+        const label = `${hour}:00`;
+
+        timeRequests.push({
+            label,
+            url: `https://data.weather.gov.hk/weatherAPI/opendata/hourlyRainfall.php?lang=tc&date=${dateStr}&time=${timeStr}`
+        });
     }
 
-    // 嘗試取得天文台九天天氣預報
-    (function loadForecast() {
-      const url = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=tc';
-      fetchWithTimeout(url, {}, 8000)
-        .then(res => {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
-        })
-        .then(data => {
-          if (!data || !data.weatherForecast) throw new Error('Unexpected data');
-          const list = document.getElementById('forecastList');
-          list.innerHTML = '';
-          data.weatherForecast.forEach(day => {
-            const li = document.createElement('li');
-            li.textContent = `${day.forecastDate}: ${day.forecastWeather}，最低 ${day.forecastMintemp.value}${day.forecastMintemp.unit}，最高 ${day.forecastMaxtemp.value}${day.forecastMaxtemp.unit}`;
-            list.appendChild(li);
-          });
+    try {
+        // 並行請求過去 24 小時的雨量 API
+        const responses = await Promise.all(
+            timeRequests.map(req => fetch(req.url).then(r => r.ok ? r.json() : null).catch(() => null))
+        );
 
-          document.getElementById('fallback').style.display = 'none';
-          document.getElementById('result').style.display = '';
-          document.getElementById('error').style.display = 'none';
-          console.log('天氣資料載入成功');
-        })
-        .catch(err => {
-          console.warn('取得天氣資料失敗：', err);
-          const errDiv = document.getElementById('error');
-          errDiv.textContent = '無法取得天氣資料（' + err.message + '）。請稍後再試或查看瀏覽器控制台。';
-          errDiv.style.display = '';
-          // 保留 fallback 顯示
+        let totalRainfall = 0;
+
+        responses.forEach((data, index) => {
+            let shatinRain = 0;
+
+            if (data && data.hourlyRainfall) {
+                // 於數據中搜尋「沙田」氣象站數據
+                const shatinData = data.hourlyRainfall.find(item => item.district === '沙田' || item.station === '沙田');
+                if (shatinData && typeof shatinData.value === 'number') {
+                    shatinRain = shatinData.value;
+                }
+            }
+
+            totalRainfall += shatinRain;
+            hourlyData.push({
+                time: timeRequests[index].label,
+                val: shatinRain
+            });
         });
-    })();
-  </script>
+
+        // 更新文字摘要
+        summaryDiv.className = '';
+        summaryDiv.innerHTML = `
+            <div class="rainfall-total">${totalRainfall.toFixed(1)} <span>毫米 (mm)</span></div>
+            <div class="meta-info">統計時間：過去 24 小時累積總量</div>
+        `;
+
+        // 渲染/更新 Chart.js 圖表
+        renderRainfallChart(hourlyData);
+
+    } catch (error) {
+        console.error('雨量數據讀取失敗:', error);
+        summaryDiv.innerHTML = '<span style="color:red;">沙田區雨量數據載入失敗。</span>';
+    }
+}
+
+// 繪製雨量長條圖
+function renderRainfallChart(dataList) {
+    const ctx = document.getElementById('rainfallChart').getContext('2d');
+    const labels = dataList.map(item => item.time);
+    const values = dataList.map(item => item.val);
+
+    if (chartInstance) {
+        chartInstance.destroy(); // 避免重複渲染疊加
+    }
+
+    chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '沙田區降雨量 (mm)',
+                data: values,
+                backgroundColor: 'rgba(0, 113, 227, 0.6)',
+                borderColor: 'rgba(0, 113, 227, 1)',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => ` 雨量: ${context.raw} mm`
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: '毫米 (mm)' },
+                    ticks: { precision: 0 }
+                },
+                x: {
+                    grid: { display: false }
+                }
+            }
+        }
+    });
+}
+</script>
+
 </body>
 </html>
