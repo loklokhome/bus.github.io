@@ -125,13 +125,6 @@
             color: #0071e3;
             margin-right: 10px;
         }
-        .bus-dir {
-            font-size: 12px;
-            color: #666;
-            background: #e5e5ea;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
         .station-name {
             font-size: 16px;
             margin-top: 6px;
@@ -353,7 +346,7 @@ async function loadAllBusStops() {
     const addBtn = document.getElementById('addBtn');
     const hint = document.getElementById('loadHint');
     if (!route) { alert('請先輸入巴士路線！'); return; }
-    hint.innerText = "⏳ 正在自動下載去回程所有車站清單...";
+    hint.innerText = "⏳ 正在自動下載所有車站清單...";
     stopSelect.innerHTML = '<option value="">正在載入中...</option>';
     stopSelect.disabled = true;
     addBtn.disabled = true;
@@ -365,8 +358,8 @@ async function loadAllBusStops() {
         const outData = await outRes.json();
         const inData = await inRes.json();
         
-        const outStops = (outData.data || []).map(s => ({ ...s, bound: 'O', dirText: '去程' }));
-        const inStops = (inData.data || []).map(s => ({ ...s, bound: 'I', dirText: '回程' }));
+        const outStops = (outData.data || []).map(s => ({ ...s, bound: 'O' }));
+        const inStops = (inData.data || []).map(s => ({ ...s, bound: 'I' }));
         const allStops = [...outStops, ...inStops];
 
         if (allStops.length === 0) {
@@ -389,7 +382,7 @@ async function loadAllBusStops() {
             opt.value = item.stop;
             opt.dataset.name = nameStr;
             opt.dataset.bound = item.bound;
-            opt.innerText = `[${item.dirText}] ${item.seq}. ${nameStr}`;
+            opt.innerText = `${item.seq}. ${nameStr}`;
             stopSelect.appendChild(opt);
         }
         stopSelect.disabled = false;
@@ -408,14 +401,12 @@ function renderStationList() {
     }
     let html = '';
     myStations.forEach((item, index) => {
-        const boundLabel = item.bound === 'I' ? '回程' : '去程';
         html += `
             <div class="bus-card" id="card-${index}">
                 <div class="bus-info">
                     <button type="button" class="delete-btn" onclick="deleteStation(${index})">❌ 刪除</button>
                     <div>
                         <span class="bus-route">${item.route}</span>
-                        <span class="bus-dir">${boundLabel}</span>
                     </div>
                     <div class="station-name">${item.stopName}</div>
                 </div>
@@ -461,7 +452,6 @@ async function refreshAllETA() {
         const etaZone = document.getElementById(`eta-${index}`);
         if (!etaZone) return;
         try {
-            // 使用特定的 stop-eta 查全部，但配合特定的方向 (dir / dir_tc / dir_en) 篩選
             const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${item.stopId}`);
             const data = await response.json();
             if (!data.data || data.data.length === 0) {
@@ -473,7 +463,6 @@ async function refreshAllETA() {
             const rawBuses = data.data
                 .filter(bus => {
                     if (bus.route !== item.route || !bus.eta) return false;
-                    // 若有 bound 標籤，則進行方向過濾
                     if (item.bound && bus.dir && bus.dir !== item.bound) return false;
                     
                     const etaDate = new Date(bus.eta);
