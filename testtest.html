@@ -439,6 +439,8 @@ function deleteStation(index) {
 
 async function refreshAllETA() {
     if (myStations.length === 0) return;
+    const now = new Date();
+
     const tasks = myStations.map(async (item, index) => {
         const etaZone = document.getElementById(`eta-${index}`);
         if (!etaZone) return;
@@ -450,12 +452,17 @@ async function refreshAllETA() {
                 return;
             }
 
-            // 1. 先過濾出指定路線且有 ETA 的班次，並依時間排序
+            // 1. 過濾指定路線，且剔除已經過期超過 30 秒以上的舊班次
             const rawBuses = data.data
-                .filter(bus => bus.route === item.route && bus.eta)
+                .filter(bus => {
+                    if (bus.route !== item.route || !bus.eta) return false;
+                    const etaDate = new Date(bus.eta);
+                    // 只保留尚未過期，或離站不超過 30 秒的班次
+                    return (etaDate - now) >= -30000;
+                })
                 .sort((a, b) => new Date(a.eta) - new Date(b.eta));
 
-            // 2. 進行「時間去重」：避免 API 傳回相同時間的重複資料（例如方向/特別班次重複）
+            // 2. 進行時間去重（避免方向或特別班次重複傳回相同時間）
             const seenTimes = new Set();
             const matchedBuses = rawBuses.filter(bus => {
                 const busTime = new Date(bus.eta).getTime();
@@ -474,7 +481,7 @@ async function refreshAllETA() {
                 const bus = matchedBuses[i];
                 const etaTime = new Date(bus.eta);
                 const timeStr = etaTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                const diffMs = etaTime - new Date();
+                const diffMs = etaTime - now;
                 const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
                 
                 if (i === 0) {
