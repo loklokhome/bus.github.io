@@ -119,11 +119,15 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.02);
         }
         .bus-info { flex: 1; }
+        .bus-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
         .bus-route {
             font-size: 24px;
             font-weight: bold;
             color: #0071e3;
-            margin-right: 10px;
         }
         .bus-dir {
             font-size: 12px;
@@ -131,6 +135,20 @@
             background: #e5e5ea;
             padding: 2px 6px;
             border-radius: 4px;
+        }
+        .delete-btn {
+            background: none;
+            color: #ff3b30;
+            border: none;
+            padding: 2px 4px;
+            font-size: 13px;
+            cursor: pointer;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+        }
+        .delete-btn:hover {
+            opacity: 0.7;
         }
         .station-name {
             font-size: 16px;
@@ -140,7 +158,7 @@
         }
         .eta-zone {
             text-align: right;
-            min-width: 160px;
+            min-width: 140px;
             display: flex;
             flex-direction: column;
             gap: 4px;
@@ -176,21 +194,6 @@
             font-size: 14px;
             font-weight: bold;
             color: #555;
-        }
-        .delete-btn {
-            background: none;
-            color: #ff3b30;
-            border: none;
-            padding: 2px 4px;
-            font-size: 13px;
-            cursor: pointer;
-            margin-left: 4px;
-            line-height: 1;
-            display: inline-flex;
-            align-items: center;
-        }
-        .delete-btn:hover {
-            opacity: 0.7;
         }
         .stock-input-group {
             display: flex;
@@ -419,17 +422,15 @@ function renderStationList() {
         html += `
             <div class="bus-card" id="card-${index}">
                 <div class="bus-info">
-                    <div>
+                    <div class="bus-header">
                         <span class="bus-route">${item.route}</span>
                         <span class="bus-dir">${boundLabel}</span>
+                        <button type="button" class="delete-btn" onclick="deleteStation(${index})">❌</button>
                     </div>
                     <div class="station-name">${item.stopName}</div>
                 </div>
                 <div class="eta-zone" id="eta-${index}">
-                    <div class="eta-row">
-                        <span style="font-size:14px; color:#86868b;">更新中...</span>
-                        <button type="button" class="delete-btn" onclick="deleteStation(${index})">❌</button>
-                    </div>
+                    <span style="font-size:14px; color:#86868b;">更新中...</span>
                 </div>
             </div>
         `;
@@ -472,11 +473,9 @@ async function refreshAllETA() {
         try {
             const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${item.stopId}`);
             const data = await response.json();
-            
-            const delBtnHtml = `<button type="button" class="delete-btn" onclick="deleteStation(${index})">❌</button>`;
 
             if (!data.data || data.data.length === 0) {
-                etaZone.innerHTML = `<div class="eta-row"><span style="font-size:14px; color:#999;">暫無班次</span>${delBtnHtml}</div>`;
+                etaZone.innerHTML = '<span style="font-size:14px; color:#999;">暫無班次</span>';
                 return;
             }
 
@@ -501,22 +500,17 @@ async function refreshAllETA() {
             });
 
             if (matchedBuses.length === 0) {
-                etaZone.innerHTML = `<div class="eta-row"><span style="font-size:14px; color:#999;">暫無班次</span>${delBtnHtml}</div>`;
+                etaZone.innerHTML = '<span style="font-size:14px; color:#999;">暫無班次</span>';
                 return;
             }
 
             let etaHtml = '';
-            const totalShow = Math.min(3, matchedBuses.length);
-
-            for (let i = 0; i < totalShow; i++) {
+            for (let i = 0; i < Math.min(3, matchedBuses.length); i++) {
                 const bus = matchedBuses[i];
                 const etaTime = new Date(bus.eta);
                 const timeStr = etaTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 const diffMs = etaTime - now;
                 const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
-                
-                // 只有最後展示的一行（有第三班車時為第三班，否則為最後顯示的一班）加上刪除按鈕
-                const appendBtn = (i === totalShow - 1) ? delBtnHtml : '';
 
                 if (i === 0) {
                     const isImminent = diffMins === 0;
@@ -526,7 +520,6 @@ async function refreshAllETA() {
                         <div class="eta-row next-1">
                             <span class="eta-countdown ${imminentClass}">${countdownText}</span>
                             <span class="eta-time">(${timeStr})</span>
-                            ${appendBtn}
                         </div>
                     `;
                 } else {
@@ -535,7 +528,6 @@ async function refreshAllETA() {
                             <span>下班: </span>
                             <span class="eta-countdown">${diffMins}分鐘</span>
                             <span>(${timeStr})</span>
-                            ${appendBtn}
                         </div>
                     `;
                 }
@@ -543,8 +535,7 @@ async function refreshAllETA() {
             etaZone.innerHTML = etaHtml;
         } catch (error) {
             console.error(error);
-            const delBtnHtml = `<button type="button" class="delete-btn" onclick="deleteStation(${index})">❌</button>`;
-            etaZone.innerHTML = `<div class="eta-row"><span style="font-size:14px; color:red;">錯誤</span>${delBtnHtml}</div>`;
+            etaZone.innerHTML = '<span style="font-size:14px; color:red;">錯誤</span>';
         }
     });
     await Promise.all(tasks);
