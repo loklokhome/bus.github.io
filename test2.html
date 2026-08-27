@@ -3,182 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>巴士到站時間查詢</title>
+    <title>真實巴士到站查詢</title>
     <style>
-        :root {
-            --primary-color: #e74c3c; /* 巴士紅色 */
-            --bg-color: #f4f6f8;
-            --card-bg: #ffffff;
-            --text-color: #333;
-            --sub-text: #777;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; }
+        :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.6; }
+        .container { max-width: 600px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { font-size: 1.5rem; color: var(--primary); }
         
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding: 20px;
-            line-height: 1.6;
-        }
+        /* 新增路線表單 */
+        .add-form { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        .add-form input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px; min-width: 100px; }
+        .add-form button { padding: 10px 15px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; }
 
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        h1 { font-size: 1.5rem; color: var(--primary-color); }
-
-        /* 篩選按鈕 */
-        .filter-btn {
-            padding: 8px 15px;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: 0.3s;
-        }
-        .btn-all { background: #ddd; color: #333; }
-        .btn-fav { background: var(--primary-color); color: #fff; }
-        .btn-fav.active { background: #333; color: #fff; }
-
-        /* 巴士卡片樣式 */
-        .bus-card {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 15px 20px;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: transform 0.2s;
-        }
-        .bus-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-
+        /* 按鈕與卡片 */
+        .filter-btn { padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 0.9rem; transition: 0.3s; background: var(--primary); color: #fff; }
+        .filter-btn.active { background: #333; }
+        .bus-card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
         .bus-info h3 { font-size: 1.2rem; margin-bottom: 4px; }
-        .bus-info p { font-size: 0.85rem; color: var(--sub-text); }
-        
+        .bus-info p { font-size: 0.85rem; color: var(--sub); }
         .bus-time { text-align: right; min-width: 80px; }
-        .time-text { font-size: 1.1rem; font-weight: bold; color: var(--primary-color); }
-        .status { font-size: 0.75rem; color: var(--sub-text); margin-top: 2px; }
-
-        /* 儲存按鈕 (星星) */
-        .save-btn {
-            background: none; border: none; font-size: 1.5rem; cursor: pointer;
-            margin-right: 10px; transition: 0.3s; opacity: 0.3;
-        }
-        .save-btn.saved { opacity: 1; color: #f1c40f; }
-        .save-btn:hover { transform: scale(1.2); }
-
+        .time-text { font-size: 1.1rem; font-weight: bold; color: var(--primary); }
+        .status { font-size: 0.75rem; color: var(--sub); margin-top: 2px; }
+        .delete-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #ccc; margin-right: 10px; }
+        .delete-btn:hover { color: #e74c3c; }
         .empty-msg { text-align: center; padding: 40px; color: #aaa; }
+        .loading { text-align: center; padding: 20px; color: var(--sub); }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>🚌 巴士到站 App</h1>
-        <button id="favToggle" class="filter-btn btn-fav" onclick="toggleFavoriteView()">只看最愛</button>
+        <h1>🚌 真實巴士到站</h1>
+        <button id="favToggle" class="filter-btn" onclick="toggleFavoriteView()">只看最愛</button>
     </header>
 
-    <div id="busList">
-        <!-- 巴士卡片會由 JS 自動生成 -->
+    <!-- 新增路線表單 -->
+    <div class="add-form">
+        <input type="text" id="routeInput" placeholder="路線 (如: 1A)">
+        <input type="text" id="stopInput" placeholder="車站ID (如: 00001)">
+        <button onclick="addFavorite()">➕ 新增</button>
     </div>
+
+    <div id="busList"><div class="loading">載入中...</div></div>
 </div>
 
 <script>
-    // 1. 模擬巴士數據 (實際應用可替換為 API)
-    const busData = [
-        { id: "1A", dest: "中環碼頭", eta: 3, stop: "尖沙咀總站" },
-        { id: "6C", dest: "九龍城", eta: 8, stop: "美孚站" },
-        { id: "102", dest: "筲箕灣", eta: 12, stop: "過海隧道巴士站" },
-        { id: "268X", dest: "洪水橋", eta: 2, stop: "佐敦道" },
-        { id: "N241", dest: "青衣", eta: 15, stop: "紅磡站" },
-        { id: "A31", dest: "機場", eta: 22, stop: "荃灣如心廣場" }
-    ];
-
-    // 2. 狀態管理
-    let favorites = JSON.parse(localStorage.getItem('busFavorites')) || [];
+    // 1. 狀態管理
+    let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
+    let busDataCache = []; // 暫存查詢結果
 
-    // 3. 核心渲染函數
-    function renderBusList() {
+    // 2. 初始化：載入儲存的愛线路線
+    window.onload = () => {
+        if (favorites.length === 0) {
+            // 預設示範路線
+            favorites = [{ route: "1A", stopId: "00001", stopName: "尖沙咀碼頭" }];
+            saveToStorage();
+        }
+        fetchAllBusData();
+    };
+
+    // 3. 核心：並行獲取所有最愛路線的真實 ETA
+    async function fetchAllBusData() {
         const listContainer = document.getElementById('busList');
-        listContainer.innerHTML = '';
-
-        // 根據篩選條件過濾
-        const displayList = showOnlyFav 
-            ? busData.filter(bus => favorites.includes(bus.id))
-            : busData;
-
-        if (displayList.length === 0) {
-            listContainer.innerHTML = '<div class="empty-msg">😴 暫時無相關巴士 / 無最愛路線</div>';
+        if (favorites.length === 0) {
+            listContainer.innerHTML = '<div class="empty-msg">😴 請新增路線或關閉「只看最愛」</div>';
             return;
         }
 
-        displayList.forEach(bus => {
-            const isSaved = favorites.includes(bus.id);
-            const statusText = bus.eta <= 3 ? "🔥 即將到站" : "行駛中";
-            
+        listContainer.innerHTML = '<div class="loading">🔄 正在向 Data.gov.hk 請求數據...</div>';
+
+        // 並行請求所有路線
+        const promises = favorites.map(async (fav) => {
+            try {
+                // 九巴 ETA API (注意：實際使用時需確保 CORS 允許或透過後端代理)
+                const url = `https://data.etabus.gov.hk/v1/transport/kmb/eta/${fav.route}/${fav.stopId}/1`;
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('API 請求失敗');
+                const json = await res.json();
+                
+                // 取第一班車的 ETA
+                const etaObj = json.data && json.data[0];
+                let etaText = "暫無班次";
+                let statusText = "";
+                
+                if (etaObj && etaObj.eta) {
+                    const etaTime = new Date(etaObj.eta);
+                    const now = new Date();
+                    const diffMin = Math.round((etaTime - now) / 60000);
+                    etaText = diffMin > 0 ? `${diffMin} 分鐘` : "即將到站";
+                    statusText = `預計 ${etaTime.getHours().toString().padStart(2,'0')}:${etaTime.getMinutes().toString().padStart(2,'0')} 到達`;
+                }
+
+                return { ...fav, etaText, statusText, error: false };
+            } catch (err) {
+                console.error(err);
+                return { ...fav, etaText: "查詢失敗", statusText: "請檢查路線/車站ID", error: true };
+            }
+        });
+
+        const results = await Promise.all(promises);
+        busDataCache = results;
+        renderBusList();
+    }
+
+    // 4. 渲染列表
+    function renderBusList() {
+        const listContainer = document.getElementById('busList');
+        listContainer.innerHTML = '';
+        
+        const displayList = showOnlyFav ? busDataCache : busDataCache; // 這裡因為已經只查 fav，所以直接顯示
+
+        if (displayList.length === 0) {
+            listContainer.innerHTML = '<div class="empty-msg">😴 無資料</div>';
+            return;
+        }
+
+        displayList.forEach((bus, index) => {
             const card = document.createElement('div');
             card.className = 'bus-card';
             card.innerHTML = `
-                <button class="save-btn ${isSaved ? 'saved' : ''}" onclick="toggleSave('${bus.id}')">★</button>
+                <button class="delete-btn" onclick="removeFavorite(${index})">✕</button>
                 <div class="bus-info">
-                    <h3>${bus.id}</h3>
-                    <p>往 ${bus.dest} · ${bus.stop}</p>
+                    <h3>${bus.route}</h3>
+                    <p>往 ${bus.stopName} (ID: ${bus.stopId})</p>
                 </div>
                 <div class="bus-time">
-                    <div class="time-text">${bus.eta} 分鐘</div>
-                    <div class="status">${statusText}</div>
+                    <div class="time-text">${bus.etaText}</div>
+                    <div class="status">${bus.statusText}</div>
                 </div>
             `;
             listContainer.appendChild(card);
         });
     }
 
-    // 4. 儲存/取消儲存功能 (LocalStorage)
-    function toggleSave(busId) {
-        const index = favorites.indexOf(busId);
-        if (index === -1) {
-            favorites.push(busId);
-        } else {
-            favorites.splice(index, 1);
+    // 5. 新增最愛
+    function addFavorite() {
+        const route = document.getElementById('routeInput').value.trim();
+        const stopId = document.getElementById('stopInput').value.trim();
+        if (!route || !stopId) return alert("請輸入路線和車站ID");
+
+        // 避免重複
+        if (favorites.some(f => f.route === route && f.stopId === stopId)) {
+            return alert("該路線已存在！");
         }
+
+        favorites.push({ route, stopId, stopName: "自訂車站" }); // 實際可再查一次 API 獲取真實站名
+        saveToStorage();
+        fetchAllBusData(); // 重新查詢
         
-        // 存入瀏覽器
-        localStorage.setItem('busFavorites', JSON.stringify(favorites));
-        renderBusList(); // 重新渲染以更新星星狀態
+        // 清空輸入框
+        document.getElementById('routeInput').value = '';
+        document.getElementById('stopInput').value = '';
     }
 
-    // 5. 切換「只看最愛」模式
+    // 6. 刪除最愛
+    function removeFavorite(index) {
+        favorites.splice(index, 1);
+        saveToStorage();
+        fetchAllBusData();
+    }
+
+    // 7. 切換視圖與自動刷新
     function toggleFavoriteView() {
         showOnlyFav = !showOnlyFav;
-        const btn = document.getElementById('favToggle');
-        btn.classList.toggle('active', showOnlyFav);
-        btn.textContent = showOnlyFav ? "顯示全部" : "只看最愛";
+        document.getElementById('favToggle').classList.toggle('active', showOnlyFav);
         renderBusList();
     }
 
-    // 6. 初始化
-    renderBusList();
+    function saveToStorage() {
+        localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
+    }
 
-    // 模擬每分鐘更新時間 (實際應用應重新 fetch API)
-    setInterval(() => {
-        busData.forEach(bus => {
-            if (bus.eta > 0) bus.eta--;
-        });
-        renderBusList();
-    }, 60000); // 60秒更新一次
+    // 每 60 秒自動刷新真實數據
+    setInterval(fetchAllBusData, 60000);
 </script>
-
 </body>
 </html>
