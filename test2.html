@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>真實巴士到站查詢</title>
+    <title>智能巴士到站查詢</title>
     <style>
         :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -21,7 +21,7 @@
         button.add-btn:disabled { background: #ccc; cursor: not-allowed; }
 
         /* 搜尋下拉選單 */
-        .dropdown { position: absolute; top: 50px; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 200px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .dropdown { position: absolute; top: 50px; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 250px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .dropdown-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9rem; }
         .dropdown-item:hover { background: #f9f9f9; }
         .dropdown-item small { color: var(--sub); display: block; margin-top: 2px; }
@@ -45,19 +45,19 @@
 
 <div class="container">
     <header>
-        <h1>🚌 真實巴士到站</h1>
+        <h1> 智能巴士到站</h1>
         <button id="favToggle" class="filter-btn" onclick="toggleFavoriteView()">只看最愛</button>
     </header>
 
     <!-- 新增路線表單 -->
     <div class="add-form">
         <div class="row">
-            <input type="text" id="routeInput" placeholder="路線 (如: 1A)">
-            <input type="text" id="stopSearchInput" placeholder="搜尋車站 (如: 尖沙咀)" autocomplete="off">
+            <input type="text" id="routeInput" placeholder="輸入路線 (如: 1A)">
+            <input type="text" id="stopSearchInput" placeholder="請先輸入路線..." autocomplete="off" disabled>
         </div>
-        <button class="add-btn" id="addBtn" onclick="addFavorite()" disabled>➕ 新增至最愛</button>
+        <button class="add-btn" id="addBtn" onclick="addFavorite()" disabled> 新增至最愛</button>
         
-        <!-- 搜尋結果下拉選單 -->
+        <!-- 車站下拉選單 -->
         <div class="dropdown" id="stopDropdown"></div>
     </div>
 
@@ -68,54 +68,86 @@
     // 1. 狀態管理
     let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
-    let allStops = []; // 暫存官方站點數據
+    let routeStopsCache = []; // 暫存當前路線嘅車站列表
     let selectedStop = null; // 暫存用戶揀選嘅車站
 
-    // 2. 初始化：載入最愛 & 拉取官方站點數據庫
-    window.onload = async () => {
+    // 2. 初始化
+    window.onload = () => {
         if (favorites.length === 0) {
             favorites = [{ route: "1A", stopId: "66A93A407AB08486", stopName: "尖沙咀碼頭" }];
             saveToStorage();
         }
         fetchAllBusData();
-        await loadStopDatabase();
+        setupRouteListener();
     };
 
-    // 3. 拉取九巴/龍運官方站點數據庫
-    async function loadStopDatabase() {
-        try {
-            const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop/');
-            const json = await res.json();
-            allStops = json.data || [];
-            console.log(`✅ 成功載入 ${allStops.length} 個巴士站`);
-        } catch (err) {
-            console.error("❌ 無法載入站點數據庫", err);
-        }
+    // 3. 監聽路線輸入框 (防抖處理)
+    function setupRouteListener() {
+        const routeInput = document.getElementById('routeInput');
+        const stopInput = document.getElementById('stopSearchInput');
+        let timeout;
+
+        routeInput.addEventListener('input', (e) => {
+            clearTimeout(timeout);
+            const route = e.target.value.trim().toUpperCase();
+            
+            // 清空狀態
+            stopInput.value = '';
+            stopInput.disabled = true;
+            stopInput.placeholder = '請先輸入路線...';
+            document.getElementById('stopDropdown').style.display = 'none';
+            document.getElementById('addBtn').disabled = true;
+            selectedStop = null;
+
+            if (route.length === 0) return;
+
+            // 延遲 500ms 觸發，避免頻繁請求
+            timeout = setTimeout(async () => {
+                stopInput.placeholder = '正在拉取車站列表...';
+                try {
+                    // 呼叫九巴路線車站 API
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}`);
+                    const json = await res.json();
+                    
+                    // 官方 API 返回嘅是 outbound/inbound 兩個方向，我哋暫時合併 outbound
+                    routeStopsCache = json.data?.outbound || [];
+                    
+                    if (routeStopsCache.length > 0) {
+                        stopInput.disabled = false;
+                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請揀選...`;
+                    } else {
+                        stopInput.placeholder = '無此路線或無車站資料';
+                    }
+                } catch (err) {
+                    stopInput.placeholder = '查詢失敗，請檢查路線號';
+                }
+            }, 500);
+        });
     }
 
-    // 4. 站名搜尋邏輯 (本地過濾)
+    // 4. 車站搜尋與下拉選單邏輯
     const stopSearchInput = document.getElementById('stopSearchInput');
     const dropdown = document.getElementById('stopDropdown');
     const addBtn = document.getElementById('addBtn');
 
     stopSearchInput.addEventListener('input', (e) => {
         const keyword = e.target.value.trim();
-        selectedStop = null; // 重新打字時清除已選車站
+        selectedStop = null;
         addBtn.disabled = true;
         
-        if (keyword.length === 0) {
+        if (keyword.length === 0 || routeStopsCache.length === 0) {
             dropdown.style.display = 'none';
             return;
         }
 
-        // 在本地數據庫中搜尋 (最多顯示 8 個)
-        const matches = allStops.filter(s => s.name_tc.includes(keyword)).slice(0, 8);
+        // 本地過濾站名 (name_tc)
+        const matches = routeStopsCache.filter(s => s.name_tc.includes(keyword)).slice(0, 10);
         
         if (matches.length > 0) {
             dropdown.innerHTML = matches.map(s => `
                 <div class="dropdown-item" data-id="${s.stop}" data-name="${s.name_tc}">
                     ${s.name_tc}
-                    <small>ID: ${s.stop}</small>
+                    <small>序號: ${s.seq}</small>
                 </div>
             `).join('');
             dropdown.style.display = 'block';
@@ -145,109 +177,4 @@
     async function fetchAllBusData() {
         const listContainer = document.getElementById('busList');
         if (favorites.length === 0) {
-            listContainer.innerHTML = '<div class="empty-msg">😴 請新增路線</div>';
-            return;
-        }
-
-        listContainer.innerHTML = '<div class="loading">🔄 正在請求真實到站數據...</div>';
-
-        const promises = favorites.map(async (fav) => {
-            try {
-                const url = `https://data.etabus.gov.hk/v1/transport/kmb/eta/${fav.route}/${fav.stopId}/1`;
-                const res = await fetch(url);
-                if (!res.ok) throw new Error('API Error');
-                const json = await res.json();
-                
-                const etaObj = json.data && json.data[0];
-                let etaText = "暫無班次";
-                let statusText = "";
-                
-                if (etaObj && etaObj.eta) {
-                    const etaTime = new Date(etaObj.eta);
-                    const now = new Date();
-                    const diffMin = Math.round((etaTime - now) / 60000);
-                    etaText = diffMin > 0 ? `${diffMin} 分鐘` : "即將到站";
-                    statusText = `預計 ${etaTime.getHours().toString().padStart(2,'0')}:${etaTime.getMinutes().toString().padStart(2,'0')} 到達`;
-                }
-                return { ...fav, etaText, statusText, error: false };
-            } catch (err) {
-                return { ...fav, etaText: "查詢失敗", statusText: "請檢查路線/車站", error: true };
-            }
-        });
-
-        const results = await Promise.all(promises);
-        renderBusList(results);
-    }
-
-    // 6. 渲染列表
-    function renderBusList(list) {
-        const listContainer = document.getElementById('busList');
-        listContainer.innerHTML = '';
-        
-        if (list.length === 0) {
-            listContainer.innerHTML = '<div class="empty-msg">😴 無資料</div>';
-            return;
-        }
-
-        list.forEach((bus, index) => {
-            const card = document.createElement('div');
-            card.className = 'bus-card';
-            card.innerHTML = `
-                <button class="delete-btn" onclick="removeFavorite(${index})">✕</button>
-                <div class="bus-info">
-                    <h3>${bus.route}</h3>
-                    <p>${bus.stopName}</p>
-                </div>
-                <div class="bus-time">
-                    <div class="time-text">${bus.etaText}</div>
-                    <div class="status">${bus.statusText}</div>
-                </div>
-            `;
-            listContainer.appendChild(card);
-        });
-    }
-
-    // 7. 新增最愛
-    function addFavorite() {
-        const route = document.getElementById('routeInput').value.trim();
-        if (!route || !selectedStop) return alert("請輸入路線並從下拉選單揀選車站");
-
-        if (favorites.some(f => f.route === route && f.stopId === selectedStop.id)) {
-            return alert("該路線及車站已存在！");
-        }
-
-        favorites.push({ route, stopId: selectedStop.id, stopName: selectedStop.name });
-        saveToStorage();
-        fetchAllBusData();
-        
-        // 清空輸入框
-        document.getElementById('routeInput').value = '';
-        stopSearchInput.value = '';
-        selectedStop = null;
-        addBtn.disabled = true;
-    }
-
-    // 8. 刪除最愛
-    function removeFavorite(index) {
-        favorites.splice(index, 1);
-        saveToStorage();
-        fetchAllBusData();
-    }
-
-    // 9. 切換視圖與自動刷新
-    function toggleFavoriteView() {
-        showOnlyFav = !showOnlyFav;
-        document.getElementById('favToggle').classList.toggle('active', showOnlyFav);
-        // 因為目前系統只查 fav，所以切換視圖主要係 UI 概念，這裡保持簡單直接重新渲染
-        fetchAllBusData(); 
-    }
-
-    function saveToStorage() {
-        localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
-    }
-
-    // 每 60 秒自動刷新真實數據
-    setInterval(fetchAllBusData, 60000);
-</script>
-</body>
-</html>
+            list
