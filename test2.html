@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能巴士到站查詢 - 本地數據版</title>
+    <title>智能巴士到站查詢 - 最終優化版</title>
     <style>
         :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -19,7 +19,7 @@
         button.add-btn { padding: 12px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; white-space: nowrap; }
         button.add-btn:disabled { background: #ccc; cursor: not-allowed; }
 
-        .dropdown { position: absolute; top: 50px; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 250px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 250px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-top: 5px; }
         .dropdown-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9rem; }
         .dropdown-item:hover { background: #f9f9f9; }
         .dropdown-item small { color: var(--sub); display: block; margin-top: 2px; }
@@ -31,7 +31,6 @@
         .bus-info p { font-size: 0.85rem; color: var(--sub); }
         .bus-time { text-align: right; min-width: 90px; }
         .time-text { font-size: 1.1rem; font-weight: bold; color: var(--primary); }
-        .status { font-size: 0.75rem; color: var(--sub); margin-top: 2px; }
         .delete-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #ccc; margin-right: 10px; }
         .delete-btn:hover { color: #e74c3c; }
         .empty-msg { text-align: center; padding: 40px; color: #aaa; }
@@ -58,7 +57,7 @@
 </div>
 
 <script>
-    // ✅ 終極方案：直接內置真實的九巴 1A 路線數據，徹底告別外部 API 和 CORS 問題
+    // ✅ 內置真實的九巴 1A 路線數據，完全不需要網絡
     const LOCAL_BUS_DATA = {
         "1A": [
             { id: "66A93A407AB08486", name: "尖沙咀碼頭", seq: 1 },
@@ -103,12 +102,14 @@
             if (route.length === 0) return;
 
             timeout = setTimeout(() => {
-                // ✅ 直接從本地變數讀取，瞬間完成，絕對不會失敗
                 routeStopsCache = LOCAL_BUS_DATA[route] || [];
                 
                 if (routeStopsCache.length > 0) {
                     stopInput.disabled = false;
-                    stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請輸入站名篩選...`;
+                    stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請選擇...`;
+                    
+                    // ✅ 核心優化：自動渲染並彈出下拉選單
+                    renderDropdown(routeStopsCache);
                 } else {
                     stopInput.placeholder = '無此路線或無車站資料 (目前僅內置 1A)';
                 }
@@ -116,24 +117,11 @@
         });
     }
 
-    const stopSearchInput = document.getElementById('stopSearchInput');
-    const dropdown = document.getElementById('stopDropdown');
-    const addBtn = document.getElementById('addBtn');
-
-    stopSearchInput.addEventListener('input', (e) => {
-        const keyword = e.target.value.trim();
-        selectedStop = null;
-        addBtn.disabled = true;
-        
-        if (keyword.length === 0 || routeStopsCache.length === 0) {
-            dropdown.style.display = 'none';
-            return;
-        }
-
-        const matches = routeStopsCache.filter(s => s.name.includes(keyword)).slice(0, 10);
-        
-        if (matches.length > 0) {
-            dropdown.innerHTML = matches.map(s => `
+    // ✅ 獨立出下拉選單的渲染邏輯
+    function renderDropdown(stops) {
+        const dropdown = document.getElementById('stopDropdown');
+        if (stops.length > 0) {
+            dropdown.innerHTML = stops.map(s => `
                 <div class="dropdown-item" data-id="${s.id}" data-name="${s.name}">
                     ${s.name}
                     <small>序號: ${s.seq}</small>
@@ -141,9 +129,27 @@
             `).join('');
             dropdown.style.display = 'block';
         } else {
-            dropdown.innerHTML = '<div class="dropdown-item">無相符車站</div>';
-            dropdown.style.display = 'block';
+            dropdown.style.display = 'none';
         }
+    }
+
+    const stopSearchInput = document.getElementById('stopSearchInput');
+    const dropdown = document.getElementById('stopDropdown');
+    const addBtn = document.getElementById('addBtn');
+
+    // 支持在車站輸入框繼續篩選
+    stopSearchInput.addEventListener('input', (e) => {
+        const keyword = e.target.value.trim();
+        selectedStop = null;
+        addBtn.disabled = true;
+        
+        if (keyword.length === 0) {
+            renderDropdown(routeStopsCache); // 清空時顯示全部
+            return;
+        }
+
+        const matches = routeStopsCache.filter(s => s.name.includes(keyword));
+        renderDropdown(matches);
     });
 
     dropdown.addEventListener('click', (e) => {
