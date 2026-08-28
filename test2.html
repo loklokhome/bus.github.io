@@ -103,11 +103,12 @@
             timeout = setTimeout(async () => {
                 stopInput.placeholder = '正在拉取車站列表...';
                 try {
-                    // ✅ 修正：使用正確的九巴 API 格式，並指定 outbound 方向
-                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/outbound`);
+                    // ✅ 使用政府開放數據靜態 JSON，解決 CORS 問題
+                    const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route-stop/');
                     const json = await res.json();
                     
-                    routeStopsCache = json.data || [];
+                    // 自動過濾出該路線的所有車站 (包含 inbound 和 outbound)
+                    routeStopsCache = json.data.filter(s => s.route === route);
                     
                     if (routeStopsCache.length > 0) {
                         stopInput.disabled = false;
@@ -116,7 +117,7 @@
                         stopInput.placeholder = '無此路線或無車站資料';
                     }
                 } catch (err) {
-                    stopInput.placeholder = '查詢失敗，請檢查路線號';
+                    stopInput.placeholder = '查詢失敗，請檢查網絡';
                 }
             }, 500);
         });
@@ -143,7 +144,7 @@
             dropdown.innerHTML = matches.map(s => `
                 <div class="dropdown-item" data-id="${s.stop}" data-name="${s.name_tc}">
                     ${s.name_tc}
-                    <small>序號: ${s.seq}</small>
+                    <small>序號: ${s.seq} | ${s.dir_tc}</small>
                 </div>
             `).join('');
             dropdown.style.display = 'block';
@@ -210,7 +211,7 @@
     // 6. 核心：並行獲取 ETA 並渲染畫面
     async function fetchAllBusData() {
         const listContainer = document.getElementById('busList');
-        const listToShow = showOnlyFav ? favorites : favorites; // 未來可擴展顯示全部路線
+        const listToShow = showOnlyFav ? favorites : favorites; 
         
         if (listToShow.length === 0) {
             listContainer.innerHTML = '<div class="empty-msg">暫無路線，請喺上方新增</div>';
@@ -221,10 +222,12 @@
 
         const promises = listToShow.map(async (fav) => {
             try {
-                // ✅ 使用正確的 ETA API 格式
-                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${fav.route}/${fav.stopId}`);
+                // ✅ 使用政府開放數據靜態 JSON 獲取 ETA
+                const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/eta/');
                 const json = await res.json();
-                const etas = json.data || [];
+                
+                // 過濾出對應路線和車站的 ETA
+                const etas = json.data.filter(e => e.route === fav.route && e.stop === fav.stopId);
                 
                 let timeText = '暫時無班次';
                 let statusText = '';
