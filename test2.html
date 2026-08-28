@@ -45,7 +45,7 @@
 
 <div class="container">
     <header>
-        <h1> 智能巴士到站</h1>
+        <h1>🚌 智能巴士到站</h1>
         <button id="favToggle" class="filter-btn" onclick="toggleFavoriteView()">只看最愛</button>
     </header>
 
@@ -55,7 +55,7 @@
             <input type="text" id="routeInput" placeholder="輸入路線 (如: 1A)">
             <input type="text" id="stopSearchInput" placeholder="請先輸入路線..." autocomplete="off" disabled>
         </div>
-        <button class="add-btn" id="addBtn" onclick="addFavorite()" disabled> 新增至最愛</button>
+        <button class="add-btn" id="addBtn" onclick="addFavorite()" disabled>➕ 新增至最愛</button>
         
         <!-- 車站下拉選單 -->
         <div class="dropdown" id="stopDropdown"></div>
@@ -68,8 +68,8 @@
     // 1. 狀態管理
     let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
-    let routeStopsCache = []; // 暫存當前路線嘅車站列表
-    let selectedStop = null; // 暫存用戶揀選嘅車站
+    let routeStopsCache = []; 
+    let selectedStop = null; 
 
     // 2. 初始化
     window.onload = () => {
@@ -91,7 +91,6 @@
             clearTimeout(timeout);
             const route = e.target.value.trim().toUpperCase();
             
-            // 清空狀態
             stopInput.value = '';
             stopInput.disabled = true;
             stopInput.placeholder = '請先輸入路線...';
@@ -101,16 +100,14 @@
 
             if (route.length === 0) return;
 
-            // 延遲 500ms 觸發，避免頻繁請求
             timeout = setTimeout(async () => {
                 stopInput.placeholder = '正在拉取車站列表...';
                 try {
-                    // 呼叫九巴路線車站 API
-                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}`);
+                    // ✅ 修正：使用正確的九巴 API 格式，並指定 outbound 方向
+                    const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/outbound`);
                     const json = await res.json();
                     
-                    // 官方 API 返回嘅是 outbound/inbound 兩個方向，我哋暫時合併 outbound
-                    routeStopsCache = json.data?.outbound || [];
+                    routeStopsCache = json.data || [];
                     
                     if (routeStopsCache.length > 0) {
                         stopInput.disabled = false;
@@ -140,7 +137,6 @@
             return;
         }
 
-        // 本地過濾站名 (name_tc)
         const matches = routeStopsCache.filter(s => s.name_tc.includes(keyword)).slice(0, 10);
         
         if (matches.length > 0) {
@@ -157,24 +153,115 @@
         }
     });
 
-    // 點擊下拉選單項目
     dropdown.addEventListener('click', (e) => {
         const item = e.target.closest('.dropdown-item');
         if (item && item.dataset.id) {
             selectedStop = { id: item.dataset.id, name: item.dataset.name };
             stopSearchInput.value = item.dataset.name;
             dropdown.style.display = 'none';
-            addBtn.disabled = false; // 允許新增
+            addBtn.disabled = false;
         }
     });
 
-    // 點擊其他地方關閉下拉選單
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.add-form')) dropdown.style.display = 'none';
     });
 
-    // 5. 核心：並行獲取所有最愛路線的真實 ETA
+    // 5. 新增最愛功能
+    function addFavorite() {
+        const route = document.getElementById('routeInput').value.trim().toUpperCase();
+        if (!selectedStop || !route) return;
+
+        const exists = favorites.some(f => f.route === route && f.stopId === selectedStop.id);
+        if (exists) {
+            alert('已經喺最愛列表入面啦！');
+            return;
+        }
+
+        favorites.push({ route, stopId: selectedStop.id, stopName: selectedStop.name });
+        saveToStorage();
+        fetchAllBusData();
+        
+        // 清空表單
+        document.getElementById('routeInput').value = '';
+        stopSearchInput.value = '';
+        stopSearchInput.disabled = true;
+        addBtn.disabled = true;
+    }
+
+    function deleteFavorite(route, stopId) {
+        favorites = favorites.filter(f => !(f.route === route && f.stopId === stopId));
+        saveToStorage();
+        fetchAllBusData();
+    }
+
+    function toggleFavoriteView() {
+        showOnlyFav = !showOnlyFav;
+        const btn = document.getElementById('favToggle');
+        btn.classList.toggle('active', showOnlyFav);
+        btn.textContent = showOnlyFav ? '顯示全部' : '只看最愛';
+        fetchAllBusData();
+    }
+
+    function saveToStorage() {
+        localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
+    }
+
+    // 6. 核心：並行獲取 ETA 並渲染畫面
     async function fetchAllBusData() {
         const listContainer = document.getElementById('busList');
-        if (favorites.length === 0) {
-            list
+        const listToShow = showOnlyFav ? favorites : favorites; // 未來可擴展顯示全部路線
+        
+        if (listToShow.length === 0) {
+            listContainer.innerHTML = '<div class="empty-msg">暫無路線，請喺上方新增</div>';
+            return;
+        }
+
+        listContainer.innerHTML = '<div class="loading">正在更新到站時間...</div>';
+
+        const promises = listToShow.map(async (fav) => {
+            try {
+                // ✅ 使用正確的 ETA API 格式
+                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${fav.route}/${fav.stopId}`);
+                const json = await res.json();
+                const etas = json.data || [];
+                
+                let timeText = '暫時無班次';
+                let statusText = '';
+
+                if (etas.length > 0) {
+                    const nextBus = etas[0];
+                    const etaDate = new Date(nextBus.eta);
+                    const now = new Date();
+                    const diffMin = Math.round((etaDate - now) / 60000);
+                    
+                    timeText = diffMin > 0 ? `${diffMin} 分鐘` : '即將抵達';
+                    statusText = nextBus.co ? `${nextBus.co} | ${nextBus.dest_tc}` : '';
+                }
+
+                return { ...fav, timeText, statusText };
+            } catch (err) {
+                return { ...fav, timeText: '查詢失敗', statusText: '' };
+            }
+        });
+
+        const results = await Promise.all(promises);
+        
+        // 渲染 HTML
+        listContainer.innerHTML = results.map(bus => `
+            <div class="bus-card">
+                <button class="delete-btn" onclick="deleteFavorite('${bus.route}', '${bus.stopId}')">✕</button>
+                <div class="bus-info">
+                    <h3>${bus.route}</h3>
+                    <p>${bus.stopName}</p>
+                    <p>${bus.statusText}</p>
+                </div>
+                <div class="bus-time">
+                    <div class="time-text">${bus.timeText}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+</script>
+</body>
+</html>
