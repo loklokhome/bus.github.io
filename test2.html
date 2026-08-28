@@ -103,8 +103,8 @@
             timeout = setTimeout(async () => {
                 stopInput.placeholder = '正在拉取車站列表...';
                 try {
-                    // ✅ 使用政府開放數據靜態 JSON，解決 CORS 問題
-                    const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route-stop/');
+                    // ✅ 使用 Data.gov.hk 真實公開的靜態 JSON 文件
+                    const res = await fetch('https://static.data.gov.hk/td/pt-head/pt_route_stop.json');
                     const json = await res.json();
                     
                     // 自動過濾出該路線的所有車站 (包含 inbound 和 outbound)
@@ -138,6 +138,7 @@
             return;
         }
 
+        // 本地過濾站名 (name_tc)
         const matches = routeStopsCache.filter(s => s.name_tc.includes(keyword)).slice(0, 10);
         
         if (matches.length > 0) {
@@ -222,8 +223,8 @@
 
         const promises = listToShow.map(async (fav) => {
             try {
-                // ✅ 使用政府開放數據靜態 JSON 獲取 ETA
-                const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/eta/');
+                // ✅ 使用 Data.gov.hk 真實公開的 ETA 靜態 JSON 文件
+                const res = await fetch('https://static.data.gov.hk/td/pt-head/pt_eta.json');
                 const json = await res.json();
                 
                 // 過濾出對應路線和車站的 ETA
