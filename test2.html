@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能巴士到站查詢</title>
+    <title>智能巴士到站查詢 - 最終修復版</title>
     <style>
         :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -12,7 +12,6 @@
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         h1 { font-size: 1.5rem; color: var(--primary); }
         
-        /* 搜尋與新增表單 */
         .add-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; position: relative; }
         .row { display: flex; gap: 8px; }
         input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; outline: none; }
@@ -20,13 +19,11 @@
         button.add-btn { padding: 12px 20px; background: var(--primary); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; white-space: nowrap; }
         button.add-btn:disabled { background: #ccc; cursor: not-allowed; }
 
-        /* 搜尋下拉選單 */
         .dropdown { position: absolute; top: 50px; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 250px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .dropdown-item { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9rem; }
         .dropdown-item:hover { background: #f9f9f9; }
         .dropdown-item small { color: var(--sub); display: block; margin-top: 2px; }
 
-        /* 按鈕與卡片 */
         .filter-btn { padding: 8px 15px; border: none; border-radius: 20px; cursor: pointer; font-size: 0.9rem; transition: 0.3s; background: var(--primary); color: #fff; }
         .filter-btn.active { background: #333; }
         .bus-card { background: var(--card); border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
@@ -49,29 +46,28 @@
         <button id="favToggle" class="filter-btn" onclick="toggleFavoriteView()">只看最愛</button>
     </header>
 
-    <!-- 新增路線表單 -->
     <div class="add-form">
         <div class="row">
             <input type="text" id="routeInput" placeholder="輸入路線 (如: 1A)">
             <input type="text" id="stopSearchInput" placeholder="請先輸入路線..." autocomplete="off" disabled>
         </div>
         <button class="add-btn" id="addBtn" onclick="addFavorite()" disabled>➕ 新增至最愛</button>
-        
-        <!-- 車站下拉選單 -->
         <div class="dropdown" id="stopDropdown"></div>
     </div>
 
-    <div id="busList"><div class="loading">載入中...</div></div>
+    <div id="busList"><div class="loading">準備就緒，請輸入路線...</div></div>
 </div>
 
 <script>
-    // 1. 狀態管理
+    // ✅ 核心修復：使用公開 CORS 代理繞過瀏覽器限制
+    const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+    const API_BASE = 'https://data.etabus.gov.hk/v1/transport/kmb';
+
     let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
-    let routeStopsCache = []; 
-    let selectedStop = null; 
+    let routeStopsCache = [];
+    let selectedStop = null;
 
-    // 2. 初始化
     window.onload = () => {
         if (favorites.length === 0) {
             favorites = [{ route: "1A", stopId: "66A93A407AB08486", stopName: "尖沙咀碼頭" }];
@@ -81,7 +77,6 @@
         setupRouteListener();
     };
 
-    // 3. 監聽路線輸入框 (防抖處理)
     function setupRouteListener() {
         const routeInput = document.getElementById('routeInput');
         const stopInput = document.getElementById('stopSearchInput');
@@ -97,33 +92,35 @@
             document.getElementById('stopDropdown').style.display = 'none';
             document.getElementById('addBtn').disabled = true;
             selectedStop = null;
+            routeStopsCache = [];
 
             if (route.length === 0) return;
 
             timeout = setTimeout(async () => {
-                stopInput.placeholder = '正在拉取車站列表...';
+                stopInput.placeholder = '正在連接官方數據庫...';
                 try {
-                    // ✅ 使用 Data.gov.hk 真實公開的靜態 JSON 文件
-                    const res = await fetch('https://static.data.gov.hk/td/pt-head/pt_route_stop.json');
-                    const json = await res.json();
+                    // ✅ 正確的 API 路徑 + CORS 代理
+                    const apiUrl = `${API_BASE}/route-stop/${route}/outbound`;
+                    const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
                     
-                    // 自動過濾出該路線的所有車站 (包含 inbound 和 outbound)
-                    routeStopsCache = json.data.filter(s => s.route === route);
+                    if (!res.ok) throw new Error('路線不存在或無 outbound 方向');
+                    
+                    const json = await res.json();
+                    routeStopsCache = json.data || [];
                     
                     if (routeStopsCache.length > 0) {
                         stopInput.disabled = false;
-                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請揀選...`;
+                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請輸入站名篩選...`;
                     } else {
                         stopInput.placeholder = '無此路線或無車站資料';
                     }
                 } catch (err) {
-                    stopInput.placeholder = '查詢失敗，請檢查網絡';
+                    stopInput.placeholder = '查詢失敗: ' + err.message;
                 }
             }, 500);
         });
     }
 
-    // 4. 車站搜尋與下拉選單邏輯
     const stopSearchInput = document.getElementById('stopSearchInput');
     const dropdown = document.getElementById('stopDropdown');
     const addBtn = document.getElementById('addBtn');
@@ -138,14 +135,13 @@
             return;
         }
 
-        // 本地過濾站名 (name_tc)
         const matches = routeStopsCache.filter(s => s.name_tc.includes(keyword)).slice(0, 10);
         
         if (matches.length > 0) {
             dropdown.innerHTML = matches.map(s => `
                 <div class="dropdown-item" data-id="${s.stop}" data-name="${s.name_tc}">
                     ${s.name_tc}
-                    <small>序號: ${s.seq} | ${s.dir_tc}</small>
+                    <small>序號: ${s.seq}</small>
                 </div>
             `).join('');
             dropdown.style.display = 'block';
@@ -169,22 +165,17 @@
         if (!e.target.closest('.add-form')) dropdown.style.display = 'none';
     });
 
-    // 5. 新增最愛功能
     function addFavorite() {
         const route = document.getElementById('routeInput').value.trim().toUpperCase();
         if (!selectedStop || !route) return;
 
         const exists = favorites.some(f => f.route === route && f.stopId === selectedStop.id);
-        if (exists) {
-            alert('已經喺最愛列表入面啦！');
-            return;
-        }
+        if (exists) { alert('已經喺最愛列表入面啦！'); return; }
 
         favorites.push({ route, stopId: selectedStop.id, stopName: selectedStop.name });
         saveToStorage();
         fetchAllBusData();
         
-        // 清空表單
         document.getElementById('routeInput').value = '';
         stopSearchInput.value = '';
         stopSearchInput.disabled = true;
@@ -209,10 +200,9 @@
         localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
     }
 
-    // 6. 核心：並行獲取 ETA 並渲染畫面
     async function fetchAllBusData() {
         const listContainer = document.getElementById('busList');
-        const listToShow = showOnlyFav ? favorites : favorites; 
+        const listToShow = showOnlyFav ? favorites : favorites;
         
         if (listToShow.length === 0) {
             listContainer.innerHTML = '<div class="empty-msg">暫無路線，請喺上方新增</div>';
@@ -223,12 +213,14 @@
 
         const promises = listToShow.map(async (fav) => {
             try {
-                // ✅ 使用 Data.gov.hk 真實公開的 ETA 靜態 JSON 文件
-                const res = await fetch('https://static.data.gov.hk/td/pt-head/pt_eta.json');
-                const json = await res.json();
+                // ✅ 正確的 ETA API 路徑 + CORS 代理
+                const apiUrl = `${API_BASE}/eta/${fav.route}/${fav.stopId}`;
+                const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
                 
-                // 過濾出對應路線和車站的 ETA
-                const etas = json.data.filter(e => e.route === fav.route && e.stop === fav.stopId);
+                if (!res.ok) throw new Error('ETA 請求失敗');
+                
+                const json = await res.json();
+                const etas = json.data || [];
                 
                 let timeText = '暫時無班次';
                 let statusText = '';
@@ -245,13 +237,12 @@
 
                 return { ...fav, timeText, statusText };
             } catch (err) {
-                return { ...fav, timeText: '查詢失敗', statusText: '' };
+                return { ...fav, timeText: '查詢失敗', statusText: err.message };
             }
         });
 
         const results = await Promise.all(promises);
         
-        // 渲染 HTML
         listContainer.innerHTML = results.map(bus => `
             <div class="bus-card">
                 <button class="delete-btn" onclick="deleteFavorite('${bus.route}', '${bus.stopId}')">✕</button>
