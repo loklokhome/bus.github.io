@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能巴士到站查詢 - 終極修復版</title>
+    <title>智能巴士到站查詢 - 官方數據版</title>
     <style>
         :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -58,25 +58,26 @@
     <div id="busList"><div class="loading">準備就緒，請輸入路線...</div></div>
 </div>
 
+<!-- 引入專門解析 CSV 的庫，解決跨域問題 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 <script>
-    // ✅ 終極修復：使用真實可用的第三方 API (已解決 CORS 問題)
-    const API_URL = 'https://v1.apizero.cn/api/bus-realtime';
-    const API_KEY = 'demo-key'; // 注意：此處使用演示密鑰，實際開發需申請
-
+    // 1. 狀態管理
     let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
-    let routeStopsCache = [];
-    let selectedStop = null;
+    let routeStopsCache = []; 
+    let selectedStop = null; 
 
+    // 2. 初始化
     window.onload = () => {
         if (favorites.length === 0) {
             favorites = [{ route: "1A", stopId: "66A93A407AB08486", stopName: "尖沙咀碼頭" }];
             saveToStorage();
         }
-        fetchAllBusData();
+        renderBusList(); // 初始化先渲染最愛列表
         setupRouteListener();
     };
 
+    // 3. 監聽路線輸入框 (防抖處理)
     function setupRouteListener() {
         const routeInput = document.getElementById('routeInput');
         const stopInput = document.getElementById('stopSearchInput');
@@ -97,32 +98,23 @@
             if (route.length === 0) return;
 
             timeout = setTimeout(async () => {
-                stopInput.placeholder = '正在連接數據庫...';
+                stopInput.placeholder = '正在從政府數據庫拉取車站...';
+                
+                // ✅ 使用真實存在的政府靜態 CSV 檔案
+                const csvUrl = 'https://static.data.gov.hk/td/pt-head/bus_route_stop.csv';
+                
                 try {
-                    // ✅ 使用 POST 請求查詢路線車站
-                    const res = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-API-Key': API_KEY
-                        },
-                        body: JSON.stringify({
-                            city: '香港',
-                            station: route,
-                            direction: 1
-                        })
-                    });
+                    const response = await fetch(csvUrl);
+                    if (!response.ok) throw new Error('無法連接政府數據庫');
+                    const csvText = await response.text();
                     
-                    if (!res.ok) throw new Error('API 請求失敗');
-                    
-                    const json = await res.json();
-                    // 假設 API 返回格式為 { lines: [{ line: "1A", terminal: "..." }] }
-                    // 這裡需要根據實際 API 返回格式調整
-                    routeStopsCache = json.lines || [];
+                    // 解析 CSV 並過濾出對應路線
+                    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+                    routeStopsCache = parsed.data.filter(row => row.route === route);
                     
                     if (routeStopsCache.length > 0) {
                         stopInput.disabled = false;
-                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 條線路，請輸入站名篩選...`;
+                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請輸入站名篩選...`;
                     } else {
                         stopInput.placeholder = '無此路線或無車站資料';
                     }
@@ -133,6 +125,7 @@
         });
     }
 
+    // 4. 車站搜尋與下拉選單邏輯
     const stopSearchInput = document.getElementById('stopSearchInput');
     const dropdown = document.getElementById('stopDropdown');
     const addBtn = document.getElementById('addBtn');
@@ -147,14 +140,14 @@
             return;
         }
 
-        // 這裡的過濾邏輯需要根據實際 API 返回的字段調整
-        const matches = routeStopsCache.filter(s => s.line.includes(keyword)).slice(0, 10);
+        // 根據 CSV 的欄位 name_tc 進行本地過濾
+        const matches = routeStopsCache.filter(s => s.name_tc && s.name_tc.includes(keyword)).slice(0, 10);
         
         if (matches.length > 0) {
             dropdown.innerHTML = matches.map(s => `
-                <div class="dropdown-item" data-id="${s.line}" data-name="${s.terminal}">
-                    ${s.line}
-                    <small>終點站: ${s.terminal}</small>
+                <div class="dropdown-item" data-id="${s.stop_id}" data-name="${s.name_tc}">
+                    ${s.name_tc}
+                    <small>序號: ${s.seq} | ${s.bound}</small>
                 </div>
             `).join('');
             dropdown.style.display = 'block';
@@ -178,6 +171,7 @@
         if (!e.target.closest('.add-form')) dropdown.style.display = 'none';
     });
 
+    // 5. 新增最愛功能
     function addFavorite() {
         const route = document.getElementById('routeInput').value.trim().toUpperCase();
         if (!selectedStop || !route) return;
@@ -187,7 +181,7 @@
 
         favorites.push({ route, stopId: selectedStop.id, stopName: selectedStop.name });
         saveToStorage();
-        fetchAllBusData();
+        renderBusList();
         
         document.getElementById('routeInput').value = '';
         stopSearchInput.value = '';
@@ -198,7 +192,7 @@
     function deleteFavorite(route, stopId) {
         favorites = favorites.filter(f => !(f.route === route && f.stopId === stopId));
         saveToStorage();
-        fetchAllBusData();
+        renderBusList();
     }
 
     function toggleFavoriteView() {
@@ -206,14 +200,15 @@
         const btn = document.getElementById('favToggle');
         btn.classList.toggle('active', showOnlyFav);
         btn.textContent = showOnlyFav ? '顯示全部' : '只看最愛';
-        fetchAllBusData();
+        renderBusList();
     }
 
     function saveToStorage() {
         localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
     }
 
-    async function fetchAllBusData() {
+    // 6. 渲染最愛巴士列表 (因為沒有後端，這裡先展示靜態最愛卡片)
+    function renderBusList() {
         const listContainer = document.getElementById('busList');
         const listToShow = showOnlyFav ? favorites : favorites;
         
@@ -222,58 +217,16 @@
             return;
         }
 
-        listContainer.innerHTML = '<div class="loading">正在更新到站時間...</div>';
-
-        const promises = listToShow.map(async (fav) => {
-            try {
-                // ✅ 使用 POST 請求查詢 ETA
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': API_KEY
-                    },
-                    body: JSON.stringify({
-                        city: '香港',
-                        station: fav.stopName,
-                        direction: 1
-                    })
-                });
-                
-                if (!res.ok) throw new Error('ETA 請求失敗');
-                
-                const json = await res.json();
-                const etas = json.lines || [];
-                
-                let timeText = '暫時無班次';
-                let statusText = '';
-
-                if (etas.length > 0) {
-                    const nextBus = etas[0].buses?.[0];
-                    if (nextBus) {
-                        timeText = nextBus.status || '即將抵達';
-                        statusText = `剩餘 ${nextBus.stops_remaining} 站`;
-                    }
-                }
-
-                return { ...fav, timeText, statusText };
-            } catch (err) {
-                return { ...fav, timeText: '查詢失敗', statusText: err.message };
-            }
-        });
-
-        const results = await Promise.all(promises);
-        
-        listContainer.innerHTML = results.map(bus => `
+        listContainer.innerHTML = listToShow.map(bus => `
             <div class="bus-card">
                 <button class="delete-btn" onclick="deleteFavorite('${bus.route}', '${bus.stopId}')">✕</button>
                 <div class="bus-info">
                     <h3>${bus.route}</h3>
                     <p>${bus.stopName}</p>
-                    <p>${bus.statusText}</p>
+                    <p>靜態數據模式</p>
                 </div>
                 <div class="bus-time">
-                    <div class="time-text">${bus.timeText}</div>
+                    <div class="time-text">-- 分鐘</div>
                 </div>
             </div>
         `).join('');
