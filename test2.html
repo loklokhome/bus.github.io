@@ -3,168 +3,291 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>巴士到站預報</title>
+  <title>九巴實時到站預報</title>
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vuedraggable@4.1.0/dist/vuedraggable.umd.min.js"></script>
   <style>
     :root {
-      --bg: #f4f6f8;
-      --card-bg: #ffffff;
-      --text: #333333;
-      --accent: #007aff;
-      --border: #e5e5ea;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --primary: #e60012;
+      --text: #1c1c1e;
+      --subtext: #8e8e93;
+      --border: #d1d1d6;
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg);
       color: var(--text);
-      max-width: 600px;
+      max-width: 500px;
       margin: 0 auto;
       padding: 16px;
     }
-    .header {
-      margin-bottom: 16px;
+    h2 { margin-top: 0; }
+    
+    /* 搜尋與新增區塊 */
+    .add-box {
+      background: var(--card);
+      padding: 16px;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
     }
-    .search-input {
-      width: 100%;
-      padding: 12px 16px;
-      font-size: 16px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      outline: none;
-      box-sizing: border-box;
-    }
-    .bus-list {
+    .form-group {
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
+    input, select, button {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    select:disabled { background: #f0f0f0; }
+    .btn-add {
+      background: var(--primary);
+      color: white;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-add:disabled { background: #ccc; }
+
+    /* 到站卡片清單 */
     .bus-card {
-      background: var(--card-bg);
-      padding: 14px 16px;
-      border-radius: 12px;
+      background: var(--card);
+      padding: 16px;
+      border-radius: 14px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       box-shadow: 0 2px 8px rgba(0,0,0,0.04);
       cursor: grab;
-      user-select: none;
     }
-    .bus-card:active {
-      cursor: grabbing;
+    .bus-card:active { cursor: grabbing; }
+    .route-badge {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--primary);
+      min-width: 60px;
     }
-    .bus-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .route-no {
-      font-size: 20px;
-      font-weight: bold;
-      color: var(--accent);
-      min-width: 50px;
-    }
-    .details {
-      display: flex;
-      flex-direction: column;
-    }
-    .destination {
-      font-weight: 600;
-      font-size: 15px;
-    }
-    .stop-name {
-      font-size: 12px;
-      color: #8e8e93;
-    }
-    .eta {
+    .info { flex-grow: 1; padding: 0 12px; }
+    .stop-name { font-weight: bold; font-size: 16px; }
+    .dir-name { font-size: 13px; color: var(--subtext); margin-top: 2px; }
+    .eta-box { text-align: right; }
+    .eta-time { font-size: 18px; font-weight: bold; color: #34c759; }
+    .eta-time.no-service { font-size: 14px; color: var(--subtext); }
+    .btn-del {
+      background: none;
+      border: none;
+      color: #ff3b30;
       font-size: 18px;
-      font-weight: bold;
-      color: #34c759;
+      cursor: pointer;
+      padding: 0 0 0 8px;
     }
-    .ghost {
-      opacity: 0.4;
-    }
+    .ghost { opacity: 0.3; }
   </style>
 </head>
 <body>
 
 <div id="app">
-  <div class="header">
-    <input 
-      type="text" 
-      v-model="searchQuery" 
-      placeholder="搜尋路線或車站..." 
-      class="search-input"
-    />
-  </div>
+  <h2>九巴實時追蹤</h2>
 
-  <div v-if="searchQuery" class="bus-list">
-    <div v-for="item in filteredRoutes" :key="item.id" class="bus-card">
-      <div class="bus-info">
-        <div class="route-no">{{ item.route }}</div>
-        <div class="details">
-          <div class="destination">往 {{ item.destination }}</div>
-          <div class="stop-name">{{ item.stop }}</div>
-        </div>
-      </div>
-      <div class="eta">{{ item.eta }} 分鐘</div>
+  <div class="add-box">
+    <div class="form-group">
+      <input 
+        type="text" 
+        v-model="inputRoute" 
+        @input="onRouteInput" 
+        placeholder="1. 輸入路線 (例如: 1A, 290A)" 
+      />
+      
+      <select v-model="selectedBound" @change="fetchStops" :disabled="!bounds.length">
+        <option value="">2. 選擇方向...</option>
+        <option v-for="b in bounds" :value="b.dir" :key="b.dir">
+          往 {{ b.dest }}
+        </option>
+      </select>
+
+      <select v-model="selectedStop" :disabled="!stops.length">
+        <option value="">3. 選擇車站...</option>
+        <option v-for="s in stops" :value="s" :key="s.stopId">
+          {{ s.seq }}. {{ s.name }}
+        </option>
+      </select>
+
+      <button class="btn-add" @click="addWatch" :disabled="!selectedStop">
+        加入監測清單
+      </button>
     </div>
   </div>
 
   <draggable 
-    v-else 
-    v-model="routes" 
-    item-key="id" 
+    v-model="myList" 
+    item-key="uniqueId" 
     animation="200"
     ghost-class="ghost"
-    class="bus-list"
+    @end="saveList"
   >
-    <template #item="{ element }">
+    <template #item="{ element, index }">
       <div class="bus-card">
-        <div class="bus-info">
-          <div class="route-no">{{ element.route }}</div>
-          <div class="details">
-            <div class="destination">往 {{ element.destination }}</div>
-            <div class="stop-name">{{ element.stop }}</div>
+        <div class="route-badge">{{ element.route }}</div>
+        <div class="info">
+          <div class="stop-name">{{ element.stopName }}</div>
+          <div class="dir-name">往 {{ element.dest }}</div>
+        </div>
+        <div class="eta-box">
+          <div class="eta-time" :class="{'no-service': !element.etaMin}">
+            {{ element.etaMin ? element.etaMin + ' 分鐘' : '未有班次' }}
           </div>
         </div>
-        <div class="eta">{{ element.eta }} 分鐘</div>
+        <button class="btn-del" @click="removeItem(index)">✕</button>
       </div>
     </template>
   </draggable>
 </div>
 
 <script>
-  const { createApp, ref, computed } = Vue;
+  const { createApp, ref, onMounted } = Vue;
 
   createApp({
-    components: {
-      draggable: window.vuedraggable
-    },
+    components: { draggable: window.vuedraggable },
     setup() {
-      const searchQuery = ref('');
-      
-      // 模擬到站資料 (可替換為政府/巴士公司 API)
-      const routes = ref([
-        { id: 1, route: '1A', destination: '中環', stop: '尖沙咀碼頭', eta: 3 },
-        { id: 2, route: '101', destination: '觀塘', stop: '紅磡海底隧道', eta: 8 },
-        { id: 3, route: '960', destination: '屯門', stop: '灣仔會展', eta: 12 },
-        { id: 4, route: '290A', destination: '荃灣', stop: '將軍澳站', eta: 2 }
-      ]);
+      const inputRoute = ref('');
+      const bounds = ref([]);
+      const selectedBound = ref('');
+      const stops = ref([]);
+      const selectedStop = ref(null);
+      const myList = ref([]);
 
-      const filteredRoutes = computed(() => {
-        const query = searchQuery.value.toLowerCase();
-        return routes.value.filter(item => 
-          item.route.toLowerCase().includes(query) ||
-          item.destination.includes(query) ||
-          item.stop.includes(query)
-        );
+      // API 快取全港車站名稱以提升效能
+      let stopNameMap = {};
+
+      onMounted(async () => {
+        // 讀取本地儲存
+        const saved = localStorage.getItem('kmb_watch_list');
+        if (saved) myList.value = JSON.parse(saved);
+        
+        // 預先載入全港巴士站名
+        const res = await fetch('https://data.etabus.gov.hk/v1/carpark/kmb/stop'); // 使用 KMB Stop API
+        const data = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop').then(r => r.json());
+        data.data.forEach(s => {
+          stopNameMap[s.stop] = s.name_tc;
+        });
+
+        // 載入後立即更新一次實時 ETA
+        updateAllETA();
+        setInterval(updateAllETA, 30000); // 每 30 秒自動刷新
       });
 
+      // 1. 輸入路線後，取得方向 (Inbound/Outbound)
+      const onRouteInput = async () => {
+        const route = inputRoute.value.trim().toUpperCase();
+        bounds.value = [];
+        stops.value = [];
+        selectedBound.value = '';
+        selectedStop.value = null;
+
+        if (!route) return;
+
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${route}`);
+        const json = await res.json();
+        
+        if (json.data && json.data.length > 0) {
+          // 整理路線方向
+          bounds.value = json.data.map(item => ({
+            dir: item.bound,
+            dest: item.dest_tc
+          }));
+        }
+      };
+
+      // 2. 選擇方向後，取得該路線的車站清單
+      const fetchStops = async () => {
+        stops.value = [];
+        selectedStop.value = null;
+        const route = inputRoute.value.trim().toUpperCase();
+        if (!selectedBound.value) return;
+
+        const dirMap = { 'O': 'outbound', 'I': 'inbound' };
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${dirMap[selectedBound.value]}/1`);
+        const json = await res.json();
+
+        if (json.data) {
+          stops.value = json.data.map(item => ({
+            seq: item.seq,
+            stopId: item.stop,
+            name: stopNameMap[item.stop] || '載入中...'
+          }));
+        }
+      };
+
+      // 3. 加入監測清單
+      const addWatch = () => {
+        const route = inputRoute.value.trim().toUpperCase();
+        const boundObj = bounds.value.find(b => b.dir === selectedBound.value);
+        
+        const newItem = {
+          uniqueId: `${route}-${selectedStop.value.stopId}-${Date.now()}`,
+          route: route,
+          bound: selectedBound.value,
+          dest: boundObj.dest,
+          stopId: selectedStop.value.stopId,
+          stopName: selectedStop.value.name,
+          etaMin: '載入中'
+        };
+
+        myList.value.push(newItem);
+        saveList();
+        fetchSingleETA(newItem);
+
+        // 清空表單
+        inputRoute.value = '';
+        bounds.value = [];
+        stops.value = [];
+      };
+
+      // 4. 取得單一站點的實時 ETA
+      const fetchSingleETA = async (item) => {
+        try {
+          const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.stopId}/${item.route}/1`);
+          const json = await res.json();
+          // 過濾出符合該方向的第一班車
+          const match = json.data.find(e => e.dir === item.bound && e.eta);
+          
+          if (match && match.eta) {
+            const diffMs = new Date(match.eta) - new Date();
+            const diffMin = Math.max(0, Math.ceil(diffMs / 60000));
+            item.etaMin = diffMin;
+          } else {
+            item.etaMin = null;
+          }
+        } catch (e) {
+          item.etaMin = null;
+        }
+      };
+
+      const updateAllETA = () => {
+        myList.value.forEach(item => fetchSingleETA(item));
+      };
+
+      const removeItem = (index) => {
+        myList.value.splice(index, 1);
+        saveList();
+      };
+
+      const saveList = () => {
+        localStorage.setItem('kmb_watch_list', JSON.stringify(myList.value));
+      };
+
       return {
-        searchQuery,
-        routes,
-        filteredRoutes
+        inputRoute, bounds, selectedBound, stops, selectedStop, myList,
+        onRouteInput, fetchStops, addWatch, removeItem, saveList
       };
     }
   }).mount('#app');
