@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智能巴士到站查詢 - 真實數據版</title>
+    <title>智能巴士到站查詢 - 手機相容版</title>
     <style>
         :root { --primary: #e74c3c; --bg: #f4f6f8; --card: #fff; --text: #333; --sub: #777; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
-        body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.6; }
+        body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.6; padding-bottom: 100px; }
         .container { max-width: 600px; margin: 0 auto; }
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         h1 { font-size: 1.5rem; color: var(--primary); }
@@ -35,13 +35,33 @@
         .delete-btn:hover { color: #e74c3c; }
         .empty-msg { text-align: center; padding: 40px; color: #aaa; }
         .loading { text-align: center; padding: 20px; color: var(--sub); }
+
+        /* ✅ 手機端專屬的錯誤顯示框 */
+        #mobile-debug {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            font-size: 12px;
+            font-family: monospace;
+            border-top: 2px solid #c62828;
+            z-index: 9999;
+            max-height: 40vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>🚌 智能巴士到站</h1>
+        <h1>🚌 智能巴士到站10</h1>
         <button id="favToggle" class="filter-btn" onclick="toggleFavoriteView()">只看最愛</button>
     </header>
 
@@ -57,209 +77,22 @@
     <div id="busList"><div class="loading">準備就緒，請輸入路線...</div></div>
 </div>
 
+<!-- ✅ 手機端錯誤顯示區 -->
+<div id="mobile-debug"></div>
+
 <script>
+    // ✅ 手機端除錯核心：捕獲所有錯誤並顯示在螢幕上
+    const debugBox = document.getElementById('mobile-debug');
+    window.onerror = function(msg, url, line, col, error) {
+        debugBox.style.display = 'block';
+        debugBox.innerText += `❌ 錯誤: ${msg}\n位置: 第 ${line} 行\n\n`;
+        return false;
+    };
+
     // ✅ 核心修復：使用真實可用的 CORS 代理 + 官方 API
     const CORS_PROXY = 'https://corsproxy.io/?';
     const API_BASE = 'https://data.etabus.gov.hk/v1/transport/kmb';
 
     let favorites = JSON.parse(localStorage.getItem('realBusFavorites')) || [];
     let showOnlyFav = false;
-    let routeStopsCache = [];
-    let selectedStop = null;
-
-    window.onload = () => {
-        if (favorites.length === 0) {
-            favorites = [{ route: "1A", stopId: "66A93A407AB08486", stopName: "尖沙咀碼頭" }];
-            saveToStorage();
-        }
-        fetchAllBusData();
-        setupRouteListener();
-    };
-
-    function setupRouteListener() {
-        const routeInput = document.getElementById('routeInput');
-        const stopInput = document.getElementById('stopSearchInput');
-        let timeout;
-
-        routeInput.addEventListener('input', (e) => {
-            clearTimeout(timeout);
-            const route = e.target.value.trim().toUpperCase();
-            
-            stopInput.value = '';
-            stopInput.disabled = true;
-            stopInput.placeholder = '請先輸入路線...';
-            document.getElementById('stopDropdown').style.display = 'none';
-            document.getElementById('addBtn').disabled = true;
-            selectedStop = null;
-            routeStopsCache = [];
-
-            if (route.length === 0) return;
-
-            timeout = setTimeout(async () => {
-                stopInput.placeholder = '正在連接官方數據庫...';
-                try {
-                    // ✅ 正確的 API 路徑 + CORS 代理
-                    const apiUrl = `${API_BASE}/route-stop/${route}/outbound`;
-                    const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
-                    
-                    if (!res.ok) throw new Error('路線不存在或無 outbound 方向');
-                    
-                    const json = await res.json();
-                    routeStopsCache = json.data || [];
-                    
-                    if (routeStopsCache.length > 0) {
-                        stopInput.disabled = false;
-                        stopInput.placeholder = `搵到 ${routeStopsCache.length} 個站，請選擇...`;
-                        renderDropdown(routeStopsCache);
-                    } else {
-                        stopInput.placeholder = '無此路線或無車站資料';
-                    }
-                } catch (err) {
-                    stopInput.placeholder = '查詢失敗: ' + err.message;
-                }
-            }, 500);
-        });
-    }
-
-    function renderDropdown(stops) {
-        const dropdown = document.getElementById('stopDropdown');
-        if (stops.length > 0) {
-            dropdown.innerHTML = stops.map(s => `
-                <div class="dropdown-item" data-id="${s.stop}" data-name="${s.name_tc}">
-                    ${s.name_tc}
-                    <small>序號: ${s.seq}</small>
-                </div>
-            `).join('');
-            dropdown.style.display = 'block';
-        } else {
-            dropdown.style.display = 'none';
-        }
-    }
-
-    const stopSearchInput = document.getElementById('stopSearchInput');
-    const dropdown = document.getElementById('stopDropdown');
-    const addBtn = document.getElementById('addBtn');
-
-    stopSearchInput.addEventListener('input', (e) => {
-        const keyword = e.target.value.trim();
-        selectedStop = null;
-        addBtn.disabled = true;
-        
-        if (keyword.length === 0) {
-            renderDropdown(routeStopsCache);
-            return;
-        }
-
-        const matches = routeStopsCache.filter(s => s.name_tc.includes(keyword));
-        renderDropdown(matches);
-    });
-
-    dropdown.addEventListener('click', (e) => {
-        const item = e.target.closest('.dropdown-item');
-        if (item && item.dataset.id) {
-            selectedStop = { id: item.dataset.id, name: item.dataset.name };
-            stopSearchInput.value = item.dataset.name;
-            dropdown.style.display = 'none';
-            addBtn.disabled = false;
-        }
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.add-form')) dropdown.style.display = 'none';
-    });
-
-    function addFavorite() {
-        const route = document.getElementById('routeInput').value.trim().toUpperCase();
-        if (!selectedStop || !route) return;
-
-        const exists = favorites.some(f => f.route === route && f.stopId === selectedStop.id);
-        if (exists) { alert('已經喺最愛列表入面啦！'); return; }
-
-        favorites.push({ route, stopId: selectedStop.id, stopName: selectedStop.name });
-        saveToStorage();
-        fetchAllBusData();
-        
-        document.getElementById('routeInput').value = '';
-        stopSearchInput.value = '';
-        stopSearchInput.disabled = true;
-        addBtn.disabled = true;
-    }
-
-    function deleteFavorite(route, stopId) {
-        favorites = favorites.filter(f => !(f.route === route && f.stopId === stopId));
-        saveToStorage();
-        fetchAllBusData();
-    }
-
-    function toggleFavoriteView() {
-        showOnlyFav = !showOnlyFav;
-        const btn = document.getElementById('favToggle');
-        btn.classList.toggle('active', showOnlyFav);
-        btn.textContent = showOnlyFav ? '顯示全部' : '只看最愛';
-        fetchAllBusData();
-    }
-
-    function saveToStorage() {
-        localStorage.setItem('realBusFavorites', JSON.stringify(favorites));
-    }
-
-    async function fetchAllBusData() {
-        const listContainer = document.getElementById('busList');
-        const listToShow = showOnlyFav ? favorites : favorites;
-        
-        if (listToShow.length === 0) {
-            listContainer.innerHTML = '<div class="empty-msg">暫無路線，請喺上方新增</div>';
-            return;
-        }
-
-        listContainer.innerHTML = '<div class="loading">正在更新到站時間...</div>';
-
-        const promises = listToShow.map(async (fav) => {
-            try {
-                // ✅ 正確的 ETA API 路徑 + CORS 代理
-                const apiUrl = `${API_BASE}/eta/${fav.route}/${fav.stopId}`;
-                const res = await fetch(CORS_PROXY + encodeURIComponent(apiUrl));
-                
-                if (!res.ok) throw new Error('ETA 請求失敗');
-                
-                const json = await res.json();
-                const etas = json.data || [];
-                
-                let timeText = '暫時無班次';
-                let statusText = '';
-
-                if (etas.length > 0) {
-                    const nextBus = etas[0];
-                    const etaDate = new Date(nextBus.eta);
-                    const now = new Date();
-                    const diffMin = Math.round((etaDate - now) / 60000);
-                    
-                    timeText = diffMin > 0 ? `${diffMin} 分鐘` : '即將抵達';
-                    statusText = nextBus.co ? `${nextBus.co} | ${nextBus.dest_tc}` : '';
-                }
-
-                return { ...fav, timeText, statusText };
-            } catch (err) {
-                return { ...fav, timeText: '查詢失敗', statusText: err.message };
-            }
-        });
-
-        const results = await Promise.all(promises);
-        
-        listContainer.innerHTML = results.map(bus => `
-            <div class="bus-card">
-                <button class="delete-btn" onclick="deleteFavorite('${bus.route}', '${bus.stopId}')">✕</button>
-                <div class="bus-info">
-                    <h3>${bus.route}</h3>
-                    <p>${bus.stopName}</p>
-                    <p>${bus.statusText}</p>
-                </div>
-                <div class="bus-time">
-                    <div class="time-text">${bus.timeText}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-</script>
-</body>
-</html>
+   
