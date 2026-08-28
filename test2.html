@@ -89,7 +89,6 @@
       padding: 0 0 0 8px;
     }
     .ghost { opacity: 0.3; }
-    .status-msg { font-size: 12px; color: var(--subtext); margin-top: -4px; }
     .error-msg { font-size: 12px; color: #ff3b30; margin-top: -4px; }
   </style>
 </head>
@@ -104,11 +103,10 @@
         type="text" 
         v-model="inputRoute" 
         @keyup.enter="searchRoute"
-        @blur="searchRoute"
-        placeholder="1. 輸入路線並按 Enter (例如: 1A, 290A)" 
+        placeholder="1. 輸入路線 (例如: 1A, 960)" 
       />
       
-      <button v-if="!bounds.length" type="button" @click="searchRoute" style="background:#555; color:#fff;">
+      <button type="button" @click="searchRoute" style="background:#333; color:#fff;">
         {{ loadingRoute ? '搜尋中...' : '搜尋路線' }}
       </button>
 
@@ -116,7 +114,7 @@
 
       <select v-model="selectedBound" @change="fetchStops" :disabled="!bounds.length || loadingStops">
         <option value="">2. 選擇方向...</option>
-        <option v-for="b in bounds" :value="b.dir" :key="b.dir">
+        <option v-for="b in bounds" :value="b" :key="b.boundCode">
           往 {{ b.dest }}
         </option>
       </select>
@@ -167,7 +165,7 @@
     setup() {
       const inputRoute = ref('');
       const bounds = ref([]);
-      const selectedBound = ref('');
+      const selectedBound = ref(null);
       const stops = ref([]);
       const selectedStop = ref(null);
       const myList = ref([]);
@@ -175,47 +173,55 @@
       const loadingRoute = ref(false);
       const loadingStops = ref(false);
       const errorMsg = ref('');
+      
+      let allRoutesCache = [];
 
-      onMounted(() => {
+      onMounted(async () => {
         const saved = localStorage.getItem('kmb_watch_list');
         if (saved) myList.value = JSON.parse(saved);
+
+        // 預先載入路線列表快取
+        try {
+          const res = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/route');
+          const json = await res.json();
+          if (json.data) allRoutesCache = json.data;
+        } catch (e) {
+          console.error("路線字典獲取失敗", e);
+        }
+
         updateAllETA();
         setInterval(updateAllETA, 30000);
       });
 
-      // 1. 搜尋路線方向
-      const searchRoute = async () => {
+      // 1. 搜尋路線方向 (使用全路線 API 快取比對)
+      const searchRoute = () => {
         const route = inputRoute.value.trim().toUpperCase();
         bounds.value = [];
         stops.value = [];
-        selectedBound.value = '';
+        selectedBound.value = null;
         selectedStop.value = null;
         errorMsg.value = '';
 
         if (!route) return;
 
         loadingRoute.value = true;
-        try {
-          const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route/${route}`);
-          const json = await res.json();
-          
-          if (json.data && json.data.length > 0) {
-            bounds.value = json.data.map(item => ({
-              dir: item.bound === 'O' ? 'outbound' : 'inbound',
-              boundCode: item.bound,
-              dest: item.dest_tc
-            }));
-          } else {
-            errorMsg.value = '找不到此路線，請檢查輸入';
-          }
-        } catch (e) {
-          errorMsg.value = '網絡連線失敗或 API 無法回應';
-        } finally {
-          loadingRoute.value = false;
+
+        const matched = allRoutesCache.filter(r => r.route === route && r.service_type === '1');
+
+        if (matched.length > 0) {
+          bounds.value = matched.map(item => ({
+            dir: item.bound === 'O' ? 'outbound' : 'inbound',
+            boundCode: item.bound,
+            dest: item.dest_tc,
+            serviceType: item.service_type
+          }));
+        } else {
+          errorMsg.value = '找不到此路線，請檢查輸入（例如 1A, 290A）';
         }
+        loadingRoute.value = false;
       };
 
-      // 2. 選擇方向後，取得該路線的車站清單及站名
+      // 2. 選擇方向後，取得該路線車站清單及名稱
       const fetchStops = async () => {
         stops.value = [];
         selectedStop.value = null;
@@ -224,12 +230,12 @@
 
         loadingStops.value = true;
         try {
-          // 取得車站序列
-          const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${selectedBound.value}/1`);
+          const boundObj = selectedBound.value;
+          const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${route}/${boundObj.dir}/${boundObj.serviceType}`);
           const json = await res.json();
 
           if (json.data && json.data.length > 0) {
-            // 逐一取得站名（只針對該路線）
+            // 平行發送請求獲取站名
             const stopPromises = json.data.map(async (item) => {
               try {
                 const sRes = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop/${item.stop}`);
@@ -253,10 +259,10 @@
         }
       };
 
-      // 3. 加入監測
+      // 3. 加入監測清單
       const addWatch = () => {
         const route = inputRoute.value.trim().toUpperCase();
-        const boundObj = bounds.value.find(b => b.dir === selectedBound.value);
+        const boundObj = selectedBound.value;
         
         const newItem = {
           uniqueId: `${route}-${selectedStop.value.stopId}-${Date.now()}`,
@@ -276,11 +282,11 @@
         inputRoute.value = '';
         bounds.value = [];
         stops.value = [];
-        selectedBound.value = '';
+        selectedBound.value = null;
         selectedStop.value = null;
       };
 
-      // 4. 更新 ETA
+      // 4. 更新實時到站時間 (ETA)
       const fetchSingleETA = async (item) => {
         try {
           const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.stopId}/${item.route}/1`);
