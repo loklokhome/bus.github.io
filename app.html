@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iPhone 18 Pro Max 香港即時供應 - Live版</title>
+<style>
+  :root{--bg:#0a0a0b;--card:#151517;--border:#242427;--green:#30d158;--yellow:#ffd60a;--red:#ff453a;--text:#f5f5f7;--muted:#86868b}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro","PingFang HK",sans-serif}
+  body{background:var(--bg);color:var(--text);padding:16px;max-width:1100px;margin:0 auto}
+  header{padding:20px 0;border-bottom:1px solid var(--border)}
+  h1{font-size:22px} .sub{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.5}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  select,button{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:10px;font-size:13px}
+  button.primary{background:#f5f5f7;color:#000;font-weight:700}
+  .status-line{margin-top:12px;font-size:12px;color:var(--muted);display:flex;gap:12px;flex-wrap:wrap}
+  .dot-live{width:8px;height:8px;background:var(--green);border-radius:50%;display:inline-block;animation:pulse 2s infinite}
+  @keyframes pulse{0%{opacity:1}50%{opacity:0.3}100%{opacity:1}}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:18px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;position:relative}
+  .store{font-weight:600} .addr{color:var(--muted);font-size:12px}
+  .badge{position:absolute;right:16px;top:16px;font-size:11px;padding:4px 8px;border-radius:20px;font-weight:600}
+  .in{background:rgba(48,209,88,0.15);color:var(--green);border:1px solid rgba(48,209,88,0.3)}
+  .low{background:rgba(255,214,10,0.15);color:var(--yellow);border:1px solid rgba(255,214,10,0.3)}
+  .out{background:rgba(255,69,58,0.15);color:var(--red);border:1px solid rgba(255,69,58,0.3)}
+  .models{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .row{display:flex;justify-content:space-between;background:#0f0f10;border-radius:8px;padding:9px 10px;font-size:13px}
+  .hint{margin-top:20px;border:1px solid var(--border);border-radius:12px;padding:12px;font-size:11px;color:var(--muted);line-height:1.6}
+  code{background:#1e1e20;padding:2px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>iPhone 18 Pro Max 香港即時供應 Live</h1>
+  <div class="sub">串接 Apple 官方 fulfillment API · 每5分鐘自動刷新 · 香港6間直營店</div>
+  <div class="bar">
+    <select id="cap"><option value="256GB">256GB</option><option value="512GB">512GB</option><option value="1TB" selected>1TB</option><option value="2TB">2TB</option></select>
+    <button class="primary" id="refreshBtn">立即抓取官網</button>
+    <button id="toggle">暫停自動刷新</button>
+  </div>
+  <div class="status-line">
+    <span><i class="dot-live"></i> <span id="liveText">等待抓取</span></span>
+    <span id="lastUpdate"></span>
+    <span id="countdown"></span>
+  </div>
+</header>
+<div class="grid" id="grid"></div>
+<div class="hint">
+  真實接法：香港版型號尾綴是 ZA/A，例如 MJXR4ZA/A 256GB 冰川色，MJY04ZA/A 1TB。官方API: https://www.apple.com/hk/shop/fulfillment-messages
+</div>
+<script>
+const STORES = [
+  {id:'R409', name:'Apple ifc mall', addr:'中環金融街8號'},
+  {id:'R428', name:'Apple Causeway Bay', addr:'希慎廣場'},
+  {id:'R485', name:'Apple Festival Walk', addr:'又一城'},
+  {id:'R499', name:'Apple apm', addr:'觀塘 apm'},
+  {id:'R610', name:'Apple New Town Plaza', addr:'沙田新城市'},
+  {id:'R673', name:'Apple Canton Road', addr:'廣東道100號'},
+];
+const PARTS_MAP = {
+  '256GB': { 'Glacier': 'MJXR4ZA/A', 'Black':'MJXQ4ZA/A', 'Burgundy':'MJY14ZA/A' },
+  '512GB': { 'Glacier': 'MJXW4ZA/A', 'Black':'MJXV4ZA/A', 'Burgundy':'MJY64ZA/A' },
+  '1TB':   { 'Glacier': 'MJY04ZA/A', 'Black':'MJXZ4ZA/A', 'Burgundy':'MJY04ZA/A' },
+  '2TB':   { 'Glacier': 'MJY84ZA/A', 'Black':'MJY74ZA/A', 'Burgundy':'MJY94ZA/A' },
+};
+let auto = true; let timer = null; let countdownTimer = null; let nextRefresh = Date.now() + 5*60*1000;
+async function fetchReal(parts){
+  const storesParam = STORES.map(s=>s.id).join(',');
+  const partsParam = parts.join(',');
+  const url = `https://www.apple.com/hk/shop/fulfillment-messages?pl=true&parts=${partsParam}&store=${storesParam}`;
+  const proxies = [url, `https://corsproxy.io/?${encodeURIComponent(url)}`, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`];
+  for(let p of proxies){
+    try{
+      const r = await fetch(p,{cache:'no-store'});
+      if(!r.ok) continue;
+      const j = await r.json();
+      return {data:j, source:p===url?'官方直連':'代理'};
+    }catch(e){ continue; }
+  }
+  return null;
+}
+function mock(){
+  return STORES.map(s=>{
+    const r=Math.random(); const overall = r>0.55?'in':r>0.25?'low':'out';
+    return {store:s, overall, models: Object.entries(PARTS_MAP[document.getElementById('cap').value]||PARTS_MAP['1TB']).map(([col,part])=>{
+      const rr=Math.random(); return {col,part,status:rr>0.6?'in':rr>0.3?'low':'out', quote: rr>0.6?'今日可取':rr>0.3?'僅剩1部':'需預訂'};
+    })};
+  });
+}
+function render(data, isMock, source){
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  document.getElementById('liveText').textContent = isMock ? '模擬數據 (官網暫時無法直連)' : `已連上 ${source}`;
+  data.forEach(item=>{
+    const storeInfo = STORES.find(x=>x.id===(item.store.id||item.store.storeId))||item.store;
+    const div=document.createElement('div'); div.className='card';
+    div.innerHTML=`<div class="store">${storeInfo.name}</div><div class="addr">${storeInfo.addr}</div><div class="badge ${item.overall}">${item.overall==='in'?'有現貨':item.overall==='low'?'即將售完':'暫無'}</div>
+      <div class="models">${(item.models||[]).map(m=>`<div class="row"><span>${m.col} · ${m.part}</span><span>${m.status==='in'?'✅ '+m.quote: m.status==='low'?'⚠️ '+m.quote:'❌ '+m.quote}</span></div>`).join('')}</div>`;
+    grid.appendChild(div);
+  });
+  document.getElementById('lastUpdate').textContent='最後更新: '+new Date().toLocaleString('zh-HK',{hour12:false});
+}
+async function doRefresh(){
+  const cap = document.getElementById('cap').value; const parts = Object.values(PARTS_MAP[cap]);
+  document.getElementById('liveText').textContent='正在抓取 Apple 官網...';
+  const res = await fetchReal(parts);
+  if(res && res.data && res.data.body && res.data.body.stores){
+    const stores = res.data.body.stores;
+    const parsed = stores.map(st=>{
+      const avail = Object.values(st.partsAvailability||{}); const hasIn = avail.some(p=>p.pickupDisplay==='available'); const hasLow = avail.some(p=>p.pickupDisplay==='inStock');
+      const overall = hasIn?'in':hasLow?'low':'out';
+      const models = avail.map(p=>({col:p.partNumber,part:p.partNumber,status:p.pickupDisplay==='available'?'in':p.pickupDisplay==='inStock'?'low':'out',quote:p.pickupSearchQuote||p.pickupDisplay}));
+      return {store:STORES.find(x=>x.id===st.storeNumber)||{id:st.storeNumber,name:st.storeName,addr:''}, overall, models};
+    });
+    render(parsed,false,res.source);
+  }else{ render(mock(),true,'mock'); }
+  nextRefresh = Date.now()+5*60*1000;
+}
+document.getElementById('refreshBtn').addEventListener('click', doRefresh);
+document.getElementById('cap').addEventListener('change', doRefresh);
+document.getElementById('toggle').addEventListener('click', (e)=>{ auto=!auto; e.target.textContent=auto?'暫停自動刷新':'繼續自動刷新'; if(auto) startAuto(); else stopAuto(); });
+function startAuto(){ stopAuto(); timer=setInterval(doRefresh, 5*60*1000); countdownTimer=setInterval(()=>{ const diff=Math.max(0, Math.floor((nextRefresh-Date.now())/1000)); const m=Math.floor(diff/60), s=diff%60; document.getElementById('countdown').textContent=`${m}:${String(s).padStart(2,'0')} 後自動刷新`; },1000); }
+function stopAuto(){ clearInterval(timer); clearInterval(countdownTimer); }
+doRefresh(); startAuto();
+</script>
+</body>
+</html>
