@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習（改良OCR+保留標點）</title>
+<title>默書發聲練習 v3</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
 body{max-width:700px;margin:20px auto;padding:0 15px;background:#f7f7f7;}
+.version-header{background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:16px;font-weight:bold;font-size:18px;text-align:center;}
 .box{background:white;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 4px #00000015;}
 textarea{width:100%;min-height:160px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px;white-space:pre-wrap;}
 input[type="file"]{margin:8px 0;}
@@ -21,20 +22,21 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 </style>
 </head>
 <body>
-<h2>📖 默書發聲練習｜改良OCR（保留標點）</h2>
+<div class="version-header">📖 默書發聲練習 v3｜OCR保留標點｜逐句朗讀</div>
 
 <div class="box">
 <h4>方法1：上載圖片 OCR 辨識（保留標點、換行）</h4>
 <input type="file" id="imgFile" accept="image/*">
 <div class="info">
 ✅ 會保留標點符號、換行<br>
-💡 小貼士：影相盡量光線充足、文字拉正，大幅加快OCR速度
+💡 小貼士：影相光線充足、文字拉正，圖片唔好太大，加快OCR<br>
+⚠️ 第一次使用要下載文字模型，需要等候；下載完之後會快好多
 </div>
 <div id="ocrStatus" class="info"></div>
 </div>
 
 <div class="box">
-<h4>方法2：手動輸入默書內容</h4>
+<h4>方法2：手動輸入默書內容（可直接修改OCR結果）</h4>
 <textarea id="textInput" placeholder="在此輸入要默書的句子、標點..."></textarea>
 </div>
 
@@ -66,31 +68,31 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 <script>
 // 本地儲存文字
 const textInput = document.getElementById('textInput');
-const SAVE_KEY = "dictation_text_save_v2";
+const SAVE_KEY = "dictation_text_save_v3";
 textInput.value = localStorage.getItem(SAVE_KEY) || "";
 textInput.addEventListener('input', ()=>{
   localStorage.setItem(SAVE_KEY, textInput.value);
 });
 
-// OCR 優化設定，保留標點同換行
+// OCR 辨識
 const imgFile = document.getElementById('imgFile');
 const ocrStatus = document.getElementById('ocrStatus');
 imgFile.addEventListener('change', async (e)=>{
   const file = e.target.files[0];
   if(!file) return;
-  ocrStatus.textContent = "正在辨識圖片文字...";
+  ocrStatus.textContent = "正在處理圖片...";
   try{
-    // 優化OCR參數，保留標點符號
     const res = await Tesseract.recognize(
       file,
       'chi-tra+eng',
       {
         logger: m => {
-          if(m.status === 'recognizing text'){
-            ocrStatus.textContent = `辨識進度：${Math.round(m.progress*100)}%`;
-          }
+          if(m.status === 'loading tesseract core') ocrStatus.textContent = "載入核心引擎...";
+          else if(m.status === 'initializing tesseract') ocrStatus.textContent = "初始化引擎...";
+          else if(m.status === 'loading language traineddata') ocrStatus.textContent = "下載繁體中文模型...";
+          else if(m.status === 'recognizing text') ocrStatus.textContent = `辨識文字進度：${Math.round(m.progress*100)}%`;
         },
-        tessedit_char_whitelist: null //唔限制字符，保留所有標點
+        tessedit_char_whitelist: null
       }
     );
     const txt = res.data.text;
@@ -103,7 +105,12 @@ imgFile.addEventListener('change', async (e)=>{
   }
 });
 
-// 文字朗讀
+// 分割句子，保留標點
+function splitSentences(text){
+  return text.match(/[^。！？；.!?]+[。！？；.!?]?/g) || [text];
+}
+
+// 朗讀邏輯
 const playBtn = document.getElementById('playBtn');
 const stopBtn = document.getElementById('stopBtn');
 const rateInput = document.getElementById('rate');
@@ -111,12 +118,6 @@ const repeatInput = document.getElementById('repeatTimes');
 const pauseInput = document.getElementById('pauseSec');
 let speech = window.speechSynthesis;
 let isPlaying = false;
-
-// 分割句子，保留標點
-function splitSentences(text){
-  // 按。！？；！？等標點分割，保留標點喺句子後面
-  return text.match(/[^。！？；.!?]+[。！？；.!?]?/g) || [text];
-}
 
 async function speakLoop(text, rate, repeat, pauseSecond){
   if(!text.trim()){alert("請輸入文字或者上載圖片");return;}
@@ -137,7 +138,6 @@ async function speakLoop(text, rate, repeat, pauseSecond){
         utter.onend = resolve;
         speech.speak(utter);
       });
-      // 讀完一句停頓
       await new Promise(resolve => setTimeout(resolve, pauseSecond * 1000));
     }
   }
