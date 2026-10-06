@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>默書發聲練習程式</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*{box-sizing:border-box;font-family:system-ui, sans-serif;}
+body{max-width:700px;margin:20px auto;padding:0 15px;background:#f7f7f7;}
+.box{background:white;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 4px #00000015;}
+textarea{width:100%;min-height:160px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px;}
+input[type="file"]{margin:8px 0;}
+.ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0;}
+button{padding:10px 14px;border:none;border-radius:8px;font-size:16px;cursor:pointer;background:#2563eb;color:white;}
+button.stop{background:#dc2626;}
+button:disabled{background:#aaa;cursor:not-allowed;}
+.info{color:#444;font-size:14px;}
+.loading{color:#d97706;font-weight:bold;}
+</style>
+</head>
+<body>
+<h2>📖 默書發聲練習</h2>
+
+<div class="box">
+<h4>方法1：上載圖片，自動提取文字(OCR)</h4>
+<input type="file" id="imgFile" accept="image/*">
+<div class="info">支援jpg/png，影默書紙，會自動辨識文字<br>OCR第一次載入會慢少少</div>
+<div id="ocrStatus" class="info"></div>
+</div>
+
+<div class="box">
+<h4>方法2：手動輸入默書內容</h4>
+<textarea id="textInput" placeholder="在此輸入要默書的句子/詞語..."></textarea>
+</div>
+
+<div class="box">
+<h4>朗讀設定</h4>
+<div class="ctrl-row">
+<div>
+<label>語速 (0.1 ~ 10)</label>
+<input type="number" id="rate" value="0.9" min="0.1" max="10" step="0.1" style="width:100%">
+</div>
+<div>
+<label>重複次數</label>
+<input type="number" id="repeatTimes" value="2" min="1" max="99" style="width:100%">
+</div>
+</div>
+<div class="ctrl-row">
+<button id="playBtn">開始朗讀</button>
+<button id="stopBtn" class="stop">停止</button>
+</div>
+<div class="info">
+提示：揀「中文(香港)」語音效果最好，視乎你裝置有冇安裝
+</div>
+</div>
+
+<script>
+// 讀取/儲存本地文字
+const textInput = document.getElementById('textInput');
+const SAVE_KEY = "dictation_text_save";
+textInput.value = localStorage.getItem(SAVE_KEY) || "";
+textInput.addEventListener('input', ()=>{
+  localStorage.setItem(SAVE_KEY, textInput.value);
+});
+
+// OCR 圖片辨識
+const imgFile = document.getElementById('imgFile');
+const ocrStatus = document.getElementById('ocrStatus');
+imgFile.addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  ocrStatus.textContent = "正在辨識圖片文字，請稍候...";
+  try{
+    const res = await Tesseract.recognize(file, 'chi-tra+eng');
+    const txt = res.data.text;
+    textInput.value = txt;
+    localStorage.setItem(SAVE_KEY, txt);
+    ocrStatus.textContent = `✅ OCR完成，已載入文字`;
+  }catch(err){
+    ocrStatus.textContent = "❌ 辨識失敗";
+    console.error(err);
+  }
+});
+
+// 文字朗讀
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
+const rateInput = document.getElementById('rate');
+const repeatInput = document.getElementById('repeatTimes');
+let speech = window.speechSynthesis;
+let isPlaying = false;
+
+async function speakLoop(text, rate, repeat){
+  if(!text.trim()){alert("請輸入文字或者上載圖片");return;}
+  isPlaying = true;
+  playBtn.disabled = true;
+  for(let i=0; i<repeat; i++){
+    if(!isPlaying) break;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = rate;
+    utter.lang = "zh-Hant-HK"; //香港繁體
+    await new Promise(resolve=>{
+      utter.onend = resolve;
+      speech.speak(utter);
+    });
+  }
+  isPlaying = false;
+  playBtn.disabled = false;
+}
+
+playBtn.onclick = ()=>{
+  const txt = textInput.value;
+  const rate = parseFloat(rateInput.value);
+  const rep = parseInt(repeatInput.value);
+  speakLoop(txt, rate, rep);
+}
+stopBtn.onclick = ()=>{
+  speech.cancel();
+  isPlaying = false;
+  playBtn.disabled = false;
+}
+</script>
+</body>
+</html>
