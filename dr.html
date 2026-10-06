@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v4</title>
+<title>默書發聲練習 v6</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
@@ -12,16 +12,18 @@ body{max-width:700px;margin:20px auto;padding:0 15px;background:#f7f7f7;}
 .box{background:white;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 4px #00000015;}
 textarea{width:100%;min-height:160px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px;white-space:pre-wrap;}
 input[type="file"]{margin:8px 0;}
-.ctrl-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0;}
+.ctrl-row-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin:10px 0;}
 .ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0;}
 button{padding:10px 14px;border:none;border-radius:8px;font-size:16px;cursor:pointer;background:#2563eb;color:white;}
 button.stop{background:#dc2626;}
 button:disabled{background:#aaa;cursor:not-allowed;}
 .info{color:#444;font-size:14px;}
+/* 高亮行樣式 */
+.highlight-line{background-color:#fff275;}
 </style>
 </head>
 <body>
-<div class="version-header">📖 默書發聲練習 v4｜逐行朗讀｜讀完一行停頓｜本地儲存</div>
+<div class="version-header">📖 默書發聲練習 v6｜逐行朗讀｜每行重複｜高亮當前行｜讀完一行停頓｜本地儲存</div>
 
 <div class="box">
 <h4>方法1：上載圖片 OCR 辨識（保留標點、換行）</h4>
@@ -41,14 +43,18 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 
 <div class="box">
 <h4>朗讀設定（讀埋標點符號）</h4>
-<div class="ctrl-row-3">
+<div class="ctrl-row-4">
 <div>
 <label>語速 (0.1 ~ 10)</label>
 <input type="number" id="rate" value="0.9" min="0.1" max="10" step="0.1" style="width:100%">
 </div>
 <div>
-<label>重複次數</label>
-<input type="number" id="repeatTimes" value="2" min="1" max="99" style="width:100%">
+<label>每行重複次數</label>
+<input type="number" id="lineRepeat" value="2" min="1" max="99" style="width:100%">
+</div>
+<div>
+<label>整體重複輪數</label>
+<input type="number" id="totalRepeat" value="2" min="1" max="99" style="width:100%">
 </div>
 <div>
 <label>每行後停頓(秒)</label>
@@ -60,20 +66,18 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 <button id="stopBtn" class="stop">停止</button>
 </div>
 <div class="info">
-提示：揀「中文(香港)」語音，會讀出句號、逗號等標點；視乎裝置有冇安裝
+例子：每行重複=2 → 會讀同一行2次，之後停頓，再去下一行；朗讀時文字框會黃色高亮當前行
 </div>
 </div>
 
 <script>
-// ========== 本地儲存（已修復） ==========
+// ========== 本地儲存 ==========
 const textInput = document.getElementById('textInput');
-const SAVE_KEY = "dictation_text_save_v4";
-// 讀取已儲存文字
+const SAVE_KEY = "dictation_text_save_v6";
 const savedText = localStorage.getItem(SAVE_KEY);
 if(savedText !== null){
   textInput.value = savedText;
 }
-// 文字改變時自動儲存
 textInput.addEventListener('input', ()=>{
   localStorage.setItem(SAVE_KEY, textInput.value);
 });
@@ -113,7 +117,8 @@ imgFile.addEventListener('change', async (e)=>{
 const playBtn = document.getElementById('playBtn');
 const stopBtn = document.getElementById('stopBtn');
 const rateInput = document.getElementById('rate');
-const repeatInput = document.getElementById('repeatTimes');
+const lineRepeatInput = document.getElementById('lineRepeat');
+const totalRepeatInput = document.getElementById('totalRepeat');
 const pauseInput = document.getElementById('pauseSec');
 const speech = window.speechSynthesis;
 let isPlaying = false;
@@ -123,44 +128,61 @@ function splitLines(text){
   return text.split(/\r?\n/);
 }
 
-async function speakLoop(text, rate, repeat, pauseSecond){
+async function speakLoop(text, rate, lineRepeat, totalRepeat, pauseSecond){
   if(!text.trim()){alert("請輸入文字或者上載圖片");return;}
   isPlaying = true;
   playBtn.disabled = true;
   const lines = splitLines(text);
+  textInput.classList.remove('highlight-line');
 
-  for(let round=0; round < repeat; round++){
+  // 整體重複輪數
+  for(let round=0; round < totalRepeat; round++){
     if(!isPlaying) break;
-    for(let line of lines){
-      line = line.trim();
+    for(let i=0; i < lines.length; i++){
+      const line = lines[i].trim();
       if(!line) continue;
       if(!isPlaying) break;
-      const utter = new SpeechSynthesisUtterance(line);
-      utter.rate = rate;
-      utter.lang = "zh-Hant-HK";
-      await new Promise(resolve=>{
-        utter.onend = resolve;
-        speech.speak(utter);
-      });
-      // 讀完一行，等待設定秒數
+
+      // 插入特殊標記，用於高亮當前行
+      const fullText = lines.join("\n");
+      const lineStartIndex = fullText.indexOf(lines[i]);
+      const lineEndIndex = lineStartIndex + lines[i].length;
+      textInput.focus();
+      textInput.setSelectionRange(lineStartIndex, lineEndIndex);
+
+      // 單一行重複讀指定次數
+      for(let l=0; l < lineRepeat; l++){
+        if(!isPlaying) break;
+        const utter = new SpeechSynthesisUtterance(line);
+        utter.rate = rate;
+        utter.lang = "zh-Hant-HK";
+        await new Promise(resolve=>{
+          utter.onend = resolve;
+          speech.speak(utter);
+        });
+      }
+      // 讀完呢行全部次數之後，停頓
       await new Promise(resolve => setTimeout(resolve, pauseSecond * 1000));
     }
   }
+  textInput.setSelectionRange(0,0);
   isPlaying = false;
   playBtn.disabled = false;
 }
 
-playBtn.onclick = ()=>{
-  const txt = textInput.value;
-  const rate = parseFloat(rateInput.value);
-  const rep = parseInt(repeatInput.value);
-  const pause = parseFloat(pauseInput.value);
-  speakLoop(txt, rate, rep, pause);
-}
 stopBtn.onclick = ()=>{
   speech.cancel();
   isPlaying = false;
   playBtn.disabled = false;
+  textInput.setSelectionRange(0,0);
+}
+playBtn.onclick = ()=>{
+  const txt = textInput.value;
+  const rate = parseFloat(rateInput.value);
+  const lineRep = parseInt(lineRepeatInput.value);
+  const totalRep = parseInt(totalRepeatInput.value);
+  const pause = parseFloat(pauseInput.value);
+  speakLoop(txt, rate, lineRep, totalRep, pause);
 }
 </script>
 </body>
