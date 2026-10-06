@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v3</title>
+<title>默書發聲練習 v4</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
@@ -12,36 +12,35 @@ body{max-width:700px;margin:20px auto;padding:0 15px;background:#f7f7f7;}
 .box{background:white;padding:16px;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 4px #00000015;}
 textarea{width:100%;min-height:160px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px;white-space:pre-wrap;}
 input[type="file"]{margin:8px 0;}
-.ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0;}
 .ctrl-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0;}
+.ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0;}
 button{padding:10px 14px;border:none;border-radius:8px;font-size:16px;cursor:pointer;background:#2563eb;color:white;}
 button.stop{background:#dc2626;}
 button:disabled{background:#aaa;cursor:not-allowed;}
 .info{color:#444;font-size:14px;}
-.loading{color:#d97706;font-weight:bold;}
 </style>
 </head>
 <body>
-<div class="version-header">📖 默書發聲練習 v3｜OCR保留標點｜逐句朗讀</div>
+<div class="version-header">📖 默書發聲練習 v4｜逐行朗讀｜讀完一行停頓｜本地儲存</div>
 
 <div class="box">
 <h4>方法1：上載圖片 OCR 辨識（保留標點、換行）</h4>
 <input type="file" id="imgFile" accept="image/*">
 <div class="info">
-✅ 會保留標點符號、換行<br>
-💡 小貼士：影相光線充足、文字拉正，圖片唔好太大，加快OCR<br>
-⚠️ 第一次使用要下載文字模型，需要等候；下載完之後會快好多
+✅ 保留標點符號、保留原文換行<br>
+💡 影相光線充足、文字拉正，圖片唔好太大加快OCR<br>
+⚠️ 第一次使用要下載繁體中文模型，下載完之後會快好多
 </div>
 <div id="ocrStatus" class="info"></div>
 </div>
 
 <div class="box">
 <h4>方法2：手動輸入默書內容（可直接修改OCR結果）</h4>
-<textarea id="textInput" placeholder="在此輸入要默書的句子、標點..."></textarea>
+<textarea id="textInput" placeholder="輸入默書內容，每一行代表一條，讀完一行會自動停頓"></textarea>
 </div>
 
 <div class="box">
-<h4>朗讀設定（會讀埋標點符號）</h4>
+<h4>朗讀設定（讀埋標點符號）</h4>
 <div class="ctrl-row-3">
 <div>
 <label>語速 (0.1 ~ 10)</label>
@@ -52,12 +51,12 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 <input type="number" id="repeatTimes" value="2" min="1" max="99" style="width:100%">
 </div>
 <div>
-<label>句間停頓(秒)</label>
+<label>每行後停頓(秒)</label>
 <input type="number" id="pauseSec" value="3" min="0" max="20" step="0.5" style="width:100%">
 </div>
 </div>
 <div class="ctrl-row">
-<button id="playBtn">開始逐句朗讀</button>
+<button id="playBtn">開始逐行朗讀</button>
 <button id="stopBtn" class="stop">停止</button>
 </div>
 <div class="info">
@@ -66,15 +65,20 @@ button:disabled{background:#aaa;cursor:not-allowed;}
 </div>
 
 <script>
-// 本地儲存文字
+// ========== 本地儲存（已修復） ==========
 const textInput = document.getElementById('textInput');
-const SAVE_KEY = "dictation_text_save_v3";
-textInput.value = localStorage.getItem(SAVE_KEY) || "";
+const SAVE_KEY = "dictation_text_save_v4";
+// 讀取已儲存文字
+const savedText = localStorage.getItem(SAVE_KEY);
+if(savedText !== null){
+  textInput.value = savedText;
+}
+// 文字改變時自動儲存
 textInput.addEventListener('input', ()=>{
   localStorage.setItem(SAVE_KEY, textInput.value);
 });
 
-// OCR 辨識
+// ========== OCR 圖片辨識 ==========
 const imgFile = document.getElementById('imgFile');
 const ocrStatus = document.getElementById('ocrStatus');
 imgFile.addEventListener('change', async (e)=>{
@@ -98,46 +102,47 @@ imgFile.addEventListener('change', async (e)=>{
     const txt = res.data.text;
     textInput.value = txt;
     localStorage.setItem(SAVE_KEY, txt);
-    ocrStatus.textContent = `✅ OCR完成，標點已保留`;
+    ocrStatus.textContent = `✅ OCR完成，標點同換行已保留`;
   }catch(err){
     ocrStatus.textContent = "❌ 辨識失敗";
     console.error(err);
   }
 });
 
-// 分割句子，保留標點
-function splitSentences(text){
-  return text.match(/[^。！？；.!?]+[。！？；.!?]?/g) || [text];
-}
-
-// 朗讀邏輯
+// ========== 朗讀控制 ==========
 const playBtn = document.getElementById('playBtn');
 const stopBtn = document.getElementById('stopBtn');
 const rateInput = document.getElementById('rate');
 const repeatInput = document.getElementById('repeatTimes');
 const pauseInput = document.getElementById('pauseSec');
-let speech = window.speechSynthesis;
+const speech = window.speechSynthesis;
 let isPlaying = false;
+
+// 按換行分割每行文字
+function splitLines(text){
+  return text.split(/\r?\n/);
+}
 
 async function speakLoop(text, rate, repeat, pauseSecond){
   if(!text.trim()){alert("請輸入文字或者上載圖片");return;}
   isPlaying = true;
   playBtn.disabled = true;
-  const sentences = splitSentences(text);
+  const lines = splitLines(text);
 
   for(let round=0; round < repeat; round++){
     if(!isPlaying) break;
-    for(let sent of sentences){
-      sent = sent.trim();
-      if(!sent) continue;
+    for(let line of lines){
+      line = line.trim();
+      if(!line) continue;
       if(!isPlaying) break;
-      const utter = new SpeechSynthesisUtterance(sent);
+      const utter = new SpeechSynthesisUtterance(line);
       utter.rate = rate;
       utter.lang = "zh-Hant-HK";
       await new Promise(resolve=>{
         utter.onend = resolve;
         speech.speak(utter);
       });
+      // 讀完一行，等待設定秒數
       await new Promise(resolve => setTimeout(resolve, pauseSecond * 1000));
     }
   }
