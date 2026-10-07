@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v10.1</title>
+<title>默書發聲練習 v12</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
 body{max-width:900px;margin:12px auto;padding:12px;}
@@ -16,8 +16,8 @@ button{padding:8px 14px;font-size:16px;cursor:pointer;}
 </style>
 </head>
 <body>
-<div class="version">默書發聲練習 v10</div>
-<div class="info">功能：OCR圖片辨識｜英文語音讀英文標點、中文語音讀中文標點｜逐段朗讀｜每行重複｜重複間隔｜行尾停頓｜高亮｜鎖定文字框｜本地儲存</div>
+<div class="version">默書發聲練習 v12</div>
+<div class="info">功能：OCR圖片辨識｜英文句號讀full stop｜雙語標點朗讀｜暫停/繼續｜逐段朗讀｜每行重複｜重複間隔｜行尾停頓｜高亮｜鎖定文字框｜本地儲存</div>
 
 <div class="control-group">
 <div class="row">
@@ -35,6 +35,8 @@ button{padding:8px 14px;font-size:16px;cursor:pointer;}
 <button id="saveBtn">儲存文字</button>
 <button id="loadBtn">載入文字</button>
 <button id="startBtn">開始朗讀</button>
+<button id="pauseBtn">暫停</button>
+<button id="resumeBtn">繼續</button>
 <button id="stopBtn">停止</button>
 </div>
 <input type="file" id="fileInput" accept="image/*" hidden>
@@ -47,7 +49,7 @@ Banana! Banana?
 香蕉！香蕉？"></textarea>
 
 <script>
-// 雙語標點對照
+// 雙語標點對照，英文句號 . 改為 full stop
 const punctData = {
     "，":{cn:"逗號", en:"comma"},
     "。":{cn:"句號", en:"full stop"},
@@ -70,10 +72,16 @@ const punctKeys = Object.keys(punctData);
 let synth = window.speechSynthesis;
 let voiceList = [];
 let isReading = false;
+let isPaused = false;
 let currentLineIndex = 0;
 let currentRepeatCount = 0;
 let currentRound = 0;
+let segIndex = 0;
+let currentSegments = [];
 let lines = [];
+let voiceUsed = null;
+let rateUsed = 1;
+let isEngVoice = false;
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
@@ -120,6 +128,8 @@ $("#loadBtn").onclick = ()=>{
 }
 
 $("#startBtn").onclick = startRead;
+$("#pauseBtn").onclick = pauseRead;
+$("#resumeBtn").onclick = resumeRead;
 $("#stopBtn").onclick = stopRead;
 
 // 拆分行文字，自動判斷用英文/中文標點讀法
@@ -144,14 +154,32 @@ function splitLineToSegments(lineText, isEnglishVoice){
     return segments;
 }
 
-async function speakSegments(segments, voice, rate){
-    for(let seg of segments){
+async function speakCurrentSegments(){
+    while(segIndex < currentSegments.length && isReading){
+        if(isPaused){
+            await waitResume();
+        }
         if(!isReading) return;
+        const seg = currentSegments[segIndex];
         const utter = new SpeechSynthesisUtterance(seg);
-        utter.voice = voice;
-        utter.rate = rate;
+        utter.voice = voiceUsed;
+        utter.rate = rateUsed;
         await speakPromise(utter);
+        segIndex++;
     }
+}
+
+function waitResume(){
+    return new Promise(resolve=>{
+        const waitLoop = ()=>{
+            if(!isPaused || !isReading){
+                resolve();
+                return;
+            }
+            setTimeout(waitLoop, 100);
+        }
+        waitLoop();
+    })
 }
 
 async function startRead(){
@@ -162,27 +190,29 @@ async function startRead(){
     if(lines.length===0){alert("請輸入文字");return;}
 
     isReading = true;
+    isPaused = false;
     $("#textArea").disabled = true;
     currentRound = 0;
-    const totalR = Number($("#totalRound").value);
     const voiceIndex = $("#voiceSelect").value;
-    const voice = voiceList[voiceIndex];
-    // 判斷是否英文語音
-    const isEnglishVoice = voice.lang.startsWith("en");
-    const rate = Number($("#rate").value);
+    voiceUsed = voiceList[voiceIndex];
+    isEngVoice = voiceUsed.lang.startsWith("en");
+    rateUsed = Number($("#rate").value);
 
-    while(currentRound < totalR && isReading){
+    while(currentRound < Number($("#totalRound").value) && isReading){
         currentRound++;
         currentLineIndex = 0;
         while(currentLineIndex < lines.length && isReading){
             const line = lines[currentLineIndex];
-            const segments = splitLineToSegments(line, isEnglishVoice);
+            currentSegments = splitLineToSegments(line, isEngVoice);
+            segIndex = 0;
             const repeatTimes = Number($("#repeatPerLine").value);
             const repeatGap = Number($("#repeatGap").value)*1000;
             const lineGap = Number($("#lineGap").value)*1000;
             currentRepeatCount = 0;
 
             while(currentRepeatCount < repeatTimes && isReading){
+                if(isPaused) await waitResume();
+                if(!isReading) return;
                 // 高亮當前行
                 $("#textArea").focus();
                 const fullTxt = $("#textArea").value;
@@ -190,16 +220,29 @@ async function startRead(){
                 for(let i=0;i<currentLineIndex;i++) pos += lines[i].length +1;
                 $("#textArea").setSelectionRange(pos, pos+line.length);
 
-                await speakSegments(segments, voice, rate);
+                await speakCurrentSegments();
 
                 currentRepeatCount++;
-                if(currentRepeatCount < repeatTimes && isReading) await sleep(repeatGap);
+                if(currentRepeatCount < repeatTimes && isReading){
+                    await sleep(repeatGap);
+                }
             }
             currentLineIndex++;
             if(isReading) await sleep(lineGap);
         }
     }
     stopRead();
+}
+
+function pauseRead(){
+    if(!isReading) return;
+    isPaused = true;
+    synth.pause();
+}
+function resumeRead(){
+    if(!isReading) return;
+    isPaused = false;
+    synth.resume();
 }
 
 function speakPromise(utter){
@@ -215,6 +258,7 @@ function sleep(ms){
 
 function stopRead(){
     isReading = false;
+    isPaused = false;
     synth.cancel();
     $("#textArea").disabled = false;
     $("#textArea").setSelectionRange(0,0);
