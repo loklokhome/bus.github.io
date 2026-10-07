@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v9</title>
+<title>默書發聲練習 v10</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
 body{max-width:900px;margin:12px auto;padding:12px;}
@@ -16,8 +16,8 @@ button{padding:8px 14px;font-size:16px;cursor:pointer;}
 </style>
 </head>
 <body>
-<div class="version">默書發聲練習 v9</div>
-<div class="info">功能：OCR圖片辨識｜逐段朗讀確保讀標點｜每行獨立重複｜每行重複間隔｜行尾停頓｜本地儲存｜朗讀高亮｜朗讀鎖定文字框</div>
+<div class="version">默書發聲練習 v10</div>
+<div class="info">功能：OCR圖片辨識｜英文語音讀英文標點、中文語音讀中文標點｜逐段朗讀｜每行重複｜重複間隔｜行尾停頓｜高亮｜鎖定文字框｜本地儲存</div>
 
 <div class="control-group">
 <div class="row">
@@ -40,38 +40,32 @@ button{padding:8px 14px;font-size:16px;cursor:pointer;}
 <input type="file" id="fileInput" accept="image/*" hidden>
 </div>
 
-<textarea id="textArea" placeholder="輸入文字，每一行分開。
-例如：
-Apple，蘋果。
-Banana！香蕉？
-測試句子，第一句。
-測試句子，第二句。"></textarea>
+<textarea id="textArea" placeholder="測試例子：
+Apple, apple.
+Banana! Banana?
+蘋果，蘋果。
+香蕉！香蕉？"></textarea>
 
 <script>
-// 標點對照表，可自行增減
-const punctuationMap = {
-    "，": "逗號",
-    "。": "句號",
-    "！": "感嘆號",
-    "？": "問號",
-    "：": "冒號",
-    "；": "分號",
-    "、": "頓號",
-    "「": "左引號",
-    "」": "右引號",
-    "『": "左單引號",
-    "』": "右單引號",
-    "（": "左括號",
-    "）": "右括號",
-    "【": "左方括號",
-    "】": "右方括號",
-    ".": "句號",
-    ",": "逗號",
-    "!": "感嘆號",
-    "?": "問號"
+// 雙語標點對照
+const punctData = {
+    "，":{cn:"逗號", en:"comma"},
+    "。":{cn:"句號", en:"period"},
+    "！":{cn:"感嘆號", en:"exclamation mark"},
+    "？":{cn:"問號", en:"question mark"},
+    "：":{cn:"冒號", en:"colon"},
+    "；":{cn:"分號", en:"semicolon"},
+    "、":{cn:"頓號", en:"enumeration comma"},
+    "「":{cn:"左引號", en:"left quotation mark"},
+    "」":{cn:"右引號", en:"right quotation mark"},
+    "（":{cn:"左括號", en:"left parenthesis"},
+    "）":{cn:"右括號", en:"right parenthesis"},
+    ".":{cn:"句號", en:"period"},
+    ",":{cn:"逗號", en:"comma"},
+    "!":{cn:"感嘆號", en:"exclamation mark"},
+    "?":{cn:"問號", en:"question mark"}
 };
-// 所有要偵測嘅標點符號
-const punctKeys = Object.keys(punctuationMap);
+const punctKeys = Object.keys(punctData);
 
 let synth = window.speechSynthesis;
 let voiceList = [];
@@ -84,7 +78,6 @@ let lines = [];
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-// 載入語音，優先揀英文語音
 function loadVoices(){
     voiceList = synth.getVoices();
     const sel = $("#voiceSelect");
@@ -126,12 +119,11 @@ $("#loadBtn").onclick = ()=>{
     else alert("冇已儲存資料");
 }
 
-// 朗讀控制
 $("#startBtn").onclick = startRead;
 $("#stopBtn").onclick = stopRead;
 
-// 將一行文字拆成多段，遇到標點就分開
-function splitLineToSegments(lineText){
+// 拆分行文字，自動判斷用英文/中文標點讀法
+function splitLineToSegments(lineText, isEnglishVoice){
     let segments = [];
     let buf = "";
     for(let char of lineText){
@@ -140,7 +132,8 @@ function splitLineToSegments(lineText){
                 segments.push(buf.trim());
                 buf = "";
             }
-            segments.push(punctuationMap[char]);
+            const p = punctData[char];
+            segments.push(isEnglishVoice ? p.en : p.cn);
         }else{
             buf += char;
         }
@@ -172,13 +165,18 @@ async function startRead(){
     $("#textArea").disabled = true;
     currentRound = 0;
     const totalR = Number($("#totalRound").value);
+    const voiceIndex = $("#voiceSelect").value;
+    const voice = voiceList[voiceIndex];
+    // 判斷是否英文語音
+    const isEnglishVoice = voice.lang.startsWith("en");
+    const rate = Number($("#rate").value);
 
     while(currentRound < totalR && isReading){
         currentRound++;
         currentLineIndex = 0;
         while(currentLineIndex < lines.length && isReading){
             const line = lines[currentLineIndex];
-            const segments = splitLineToSegments(line);
+            const segments = splitLineToSegments(line, isEnglishVoice);
             const repeatTimes = Number($("#repeatPerLine").value);
             const repeatGap = Number($("#repeatGap").value)*1000;
             const lineGap = Number($("#lineGap").value)*1000;
@@ -192,8 +190,6 @@ async function startRead(){
                 for(let i=0;i<currentLineIndex;i++) pos += lines[i].length +1;
                 $("#textArea").setSelectionRange(pos, pos+line.length);
 
-                const voice = voiceList[$("#voiceSelect").value];
-                const rate = Number($("#rate").value);
                 await speakSegments(segments, voice, rate);
 
                 currentRepeatCount++;
