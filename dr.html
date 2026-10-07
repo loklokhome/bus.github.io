@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v8</title>
+<title>默書發聲練習 v9</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
 body{max-width:900px;margin:12px auto;padding:12px;}
@@ -16,8 +16,8 @@ button{padding:8px 14px;font-size:16px;cursor:pointer;}
 </style>
 </head>
 <body>
-<div class="version">默書發聲練習 v8</div>
-<div class="info">功能：OCR圖片辨識｜讀標點符號｜每行獨立重複｜每行重複間隔｜行尾停頓｜本地儲存｜朗讀高亮｜朗讀鎖定文字框</div>
+<div class="version">默書發聲練習 v9</div>
+<div class="info">功能：OCR圖片辨識｜逐段朗讀確保讀標點｜每行獨立重複｜每行重複間隔｜行尾停頓｜本地儲存｜朗讀高亮｜朗讀鎖定文字框</div>
 
 <div class="control-group">
 <div class="row">
@@ -48,7 +48,7 @@ Banana！香蕉？
 測試句子，第二句。"></textarea>
 
 <script>
-// 標點符號對照表，可以自行加減
+// 標點對照表，可自行增減
 const punctuationMap = {
     "，": "逗號",
     "。": "句號",
@@ -64,17 +64,14 @@ const punctuationMap = {
     "（": "左括號",
     "）": "右括號",
     "【": "左方括號",
-    "】": "右方括號"
+    "】": "右方括號",
+    ".": "句號",
+    ",": "逗號",
+    "!": "感嘆號",
+    "?": "問號"
 };
-
-// 轉換標點為文字
-function convertPunctuationToSpeakText(str){
-    let result = str;
-    for(let key in punctuationMap){
-        result = result.replaceAll(key, " " + punctuationMap[key] + " ");
-    }
-    return result;
-}
+// 所有要偵測嘅標點符號
+const punctKeys = Object.keys(punctuationMap);
 
 let synth = window.speechSynthesis;
 let voiceList = [];
@@ -87,7 +84,7 @@ let lines = [];
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-// 載入語音，優先揀適合英文發音嘅語音
+// 載入語音，優先揀英文語音
 function loadVoices(){
     voiceList = synth.getVoices();
     const sel = $("#voiceSelect");
@@ -98,7 +95,6 @@ function loadVoices(){
         opt.value = i;
         sel.appendChild(opt);
     })
-    // 優先揀英文語音改善英文讀音，冇就用第一個
     let engIdx = voiceList.findIndex(v=>v.lang.startsWith("en"));
     if(engIdx >=0) sel.value = engIdx;
 }
@@ -134,6 +130,37 @@ $("#loadBtn").onclick = ()=>{
 $("#startBtn").onclick = startRead;
 $("#stopBtn").onclick = stopRead;
 
+// 將一行文字拆成多段，遇到標點就分開
+function splitLineToSegments(lineText){
+    let segments = [];
+    let buf = "";
+    for(let char of lineText){
+        if(punctKeys.includes(char)){
+            if(buf.trim() !== ""){
+                segments.push(buf.trim());
+                buf = "";
+            }
+            segments.push(punctuationMap[char]);
+        }else{
+            buf += char;
+        }
+    }
+    if(buf.trim() !== ""){
+        segments.push(buf.trim());
+    }
+    return segments;
+}
+
+async function speakSegments(segments, voice, rate){
+    for(let seg of segments){
+        if(!isReading) return;
+        const utter = new SpeechSynthesisUtterance(seg);
+        utter.voice = voice;
+        utter.rate = rate;
+        await speakPromise(utter);
+    }
+}
+
 async function startRead(){
     if(isReading) return;
     const rawText = $("#textArea").value;
@@ -142,7 +169,7 @@ async function startRead(){
     if(lines.length===0){alert("請輸入文字");return;}
 
     isReading = true;
-    $("#textArea").disabled = true; //朗讀鎖定文字框
+    $("#textArea").disabled = true;
     currentRound = 0;
     const totalR = Number($("#totalRound").value);
 
@@ -151,7 +178,7 @@ async function startRead(){
         currentLineIndex = 0;
         while(currentLineIndex < lines.length && isReading){
             const line = lines[currentLineIndex];
-            const speakLine = convertPunctuationToSpeakText(line);
+            const segments = splitLineToSegments(line);
             const repeatTimes = Number($("#repeatPerLine").value);
             const repeatGap = Number($("#repeatGap").value)*1000;
             const lineGap = Number($("#lineGap").value)*1000;
@@ -165,12 +192,10 @@ async function startRead(){
                 for(let i=0;i<currentLineIndex;i++) pos += lines[i].length +1;
                 $("#textArea").setSelectionRange(pos, pos+line.length);
 
-                // 讀音
                 const voice = voiceList[$("#voiceSelect").value];
-                const utter = new SpeechSynthesisUtterance(speakLine);
-                utter.voice = voice;
-                utter.rate = Number($("#rate").value);
-                await speakPromise(utter);
+                const rate = Number($("#rate").value);
+                await speakSegments(segments, voice, rate);
+
                 currentRepeatCount++;
                 if(currentRepeatCount < repeatTimes && isReading) await sleep(repeatGap);
             }
@@ -196,7 +221,7 @@ function stopRead(){
     isReading = false;
     synth.cancel();
     $("#textArea").disabled = false;
-    $("#textArea").setSelectionRange(0,0); //清除高亮
+    $("#textArea").setSelectionRange(0,0);
 }
 </script>
 </body>
