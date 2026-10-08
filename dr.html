@@ -2,267 +2,169 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>默書發聲練習 v12</title>
+<title>默書發聲程式 v12 修復版</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
-body{max-width:900px;margin:12px auto;padding:12px;}
-.control-group{border:1px solid #ccc;padding:12px;margin:8px 0;border-radius:8px;}
-.row{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0;align-items:center;}
-textarea{width:100%;height:260px;padding:10px;font-size:18px;white-space:pre-wrap;}
-button{padding:8px 14px;font-size:16px;cursor:pointer;}
-.info{color:#555;font-size:14px;}
-.version{font-weight:bold;font-size:18px;color:#2266aa;}
+body{max-width:920px;margin:16px auto;padding:16px;background:#f7f7f7;}
+h2{margin-top:0}
+.ctrl{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.ctrl>div{background:#fff;padding:8px;border-radius:6px}
+textarea{width:100%;height:260px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px}
+button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:pointer;background:#2563eb;color:white;margin:4px}
+#stop{background:#dc2626}
+#pause{background:#f59e0b}
+#ocrBtn{background:#059669}
+#info{padding:8px;background:#eef;border-radius:6px;margin:8px 0}
+.line-highlight{background:#fffd98}
 </style>
 </head>
 <body>
-<div class="version">默書發聲練習 v12</div>
-<div class="info">功能：OCR圖片辨識｜英文句號讀full stop｜雙語標點朗讀｜暫停/繼續｜逐段朗讀｜每行重複｜重複間隔｜行尾停頓｜高亮｜鎖定文字框｜本地儲存</div>
-
-<div class="control-group">
-<div class="row">
-<label>每行重複次數：<input id="repeatPerLine" type="number" value="2" min="1"></label>
-<label>✅ 每行重複之間間隔(秒)：<input id="repeatGap" type="number" value="0.8" min="0" step="0.1"></label>
-<label>讀完一行後停頓(秒)：<input id="lineGap" type="number" value="1.5" min="0" step="0.1"></label>
-<label>整體輪數：<input id="totalRound" type="number" value="1" min="1"></label>
+<h2>默書發聲程式 v12｜每行重複+標點朗讀+暫停+OCR</h2>
+<div class="ctrl">
+<div>
+<label>每行重複次數</label>
+<input type="number" id="repeatCount" value="2" min="1">
 </div>
-<div class="row">
-<label>語音選擇：<select id="voiceSelect"></select></label>
-<label>語速：<input id="rate" type="range" min="0.5" max="1.8" step="0.1" value="1"> <span id="rateVal">1.0</span></label>
+<div>
+<label>每行間隔(秒)</label>
+<input type="number" id="lineGap" value="2" min="0.5" step="0.1">
 </div>
-<div class="row">
-<button id="ocrBtn">上載圖片OCR辨識</button>
-<button id="saveBtn">儲存文字</button>
-<button id="loadBtn">載入文字</button>
-<button id="startBtn">開始朗讀</button>
-<button id="pauseBtn">暫停</button>
-<button id="resumeBtn">繼續</button>
+<div>
+<label>語速 0.1~10</label>
+<input type="number" id="rate" value="1" min="0.1" max="10" step="0.1">
+</div>
+</div>
+<div>
+<input type="file" id="imgUpload" accept="image/*">
+<button id="ocrBtn">OCR圖片辨識</button>
+<button onclick="saveText()">儲存文字</button>
+<button onclick="loadText()">讀取已儲存</button>
+</div>
+<textarea id="txtInput" placeholder="貼上文字，每行一句">Hello.
+This is a test.</textarea>
+<div>
+<button id="playBtn">開始朗讀</button>
+<button id="pauseBtn">暫停 / 繼續</button>
 <button id="stopBtn">停止</button>
 </div>
-<input type="file" id="fileInput" accept="image/*" hidden>
-</div>
-
-<textarea id="textArea" placeholder="測試例子：
-Apple, apple.
-Banana! Banana?
-蘋果，蘋果。
-香蕉！香蕉？"></textarea>
+<div id="info"></div>
 
 <script>
-// 雙語標點對照，英文句號 . 改為 full stop
-const punctData = {
-    "，":{cn:"逗號", en:"comma"},
-    "。":{cn:"句號", en:"full stop"},
-    "！":{cn:"感嘆號", en:"exclamation mark"},
-    "？":{cn:"問號", en:"question mark"},
-    "：":{cn:"冒號", en:"colon"},
-    "；":{cn:"分號", en:"semicolon"},
-    "、":{cn:"頓號", en:"enumeration comma"},
-    "「":{cn:"左引號", en:"left quotation mark"},
-    "」":{cn:"右引號", en:"right quotation mark"},
-    "（":{cn:"左括號", en:"left parenthesis"},
-    "）":{cn:"右括號", en:"right parenthesis"},
-    ".":{cn:"句號", en:"full stop"},
-    ",":{cn:"逗號", en:"comma"},
-    "!":{cn:"感嘆號", en:"exclamation mark"},
-    "?":{cn:"問號", en:"question mark"}
-};
-const punctKeys = Object.keys(punctData);
-
 let synth = window.speechSynthesis;
-let voiceList = [];
-let isReading = false;
+let isRunning = false;
 let isPaused = false;
-let currentLineIndex = 0;
-let currentRepeatCount = 0;
-let currentRound = 0;
-let segIndex = 0;
-let currentSegments = [];
-let lines = [];
-let voiceUsed = null;
-let rateUsed = 1;
-let isEngVoice = false;
 
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
-
-function loadVoices(){
-    voiceList = synth.getVoices();
-    const sel = $("#voiceSelect");
-    sel.innerHTML = "";
-    voiceList.forEach((v,i)=>{
-        const opt = document.createElement("option");
-        opt.textContent = v.name + " ("+v.lang+")";
-        opt.value = i;
-        sel.appendChild(opt);
-    })
-    let engIdx = voiceList.findIndex(v=>v.lang.startsWith("en"));
-    if(engIdx >=0) sel.value = engIdx;
-}
-synth.onvoiceschanged = loadVoices;
-loadVoices();
-
-$("#rate").oninput = ()=>$("#rateVal").textContent = $("#rate").value;
-
-// OCR
-$("#ocrBtn").onclick = ()=>$("#fileInput").click();
-$("#fileInput").onchange = async (e)=>{
-    const file = e.target.files[0];
-    if(!file)return;
-    alert("OCR處理中，大圖會耐少少，請等...");
-    const tesseract = await import('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-    const res = await tesseract.recognize(file, 'chi_tra+eng');
-    $("#textArea").value = res.data.text;
-    alert("OCR完成，保留標點同換行");
-}
-
-// 本地儲存載入
-$("#saveBtn").onclick = ()=>{
-    localStorage.setItem("dictationText", $("#textArea").value);
-    alert("已儲存到瀏覽器本地");
-}
-$("#loadBtn").onclick = ()=>{
-    const txt = localStorage.getItem("dictationText");
-    if(txt){$("#textArea").value = txt;alert("載入成功");}
-    else alert("冇已儲存資料");
-}
-
-$("#startBtn").onclick = startRead;
-$("#pauseBtn").onclick = pauseRead;
-$("#resumeBtn").onclick = resumeRead;
-$("#stopBtn").onclick = stopRead;
-
-// 拆分行文字，自動判斷用英文/中文標點讀法
-function splitLineToSegments(lineText, isEnglishVoice){
-    let segments = [];
-    let buf = "";
-    for(let char of lineText){
-        if(punctKeys.includes(char)){
-            if(buf.trim() !== ""){
-                segments.push(buf.trim());
-                buf = "";
-            }
-            const p = punctData[char];
-            segments.push(isEnglishVoice ? p.en : p.cn);
-        }else{
-            buf += char;
-        }
-    }
-    if(buf.trim() !== ""){
-        segments.push(buf.trim());
-    }
-    return segments;
-}
-
-async function speakCurrentSegments(){
-    while(segIndex < currentSegments.length && isReading){
-        if(isPaused){
-            await waitResume();
-        }
-        if(!isReading) return;
-        const seg = currentSegments[segIndex];
-        const utter = new SpeechSynthesisUtterance(seg);
-        utter.voice = voiceUsed;
-        utter.rate = rateUsed;
-        await speakPromise(utter);
-        segIndex++;
-    }
-}
-
-function waitResume(){
-    return new Promise(resolve=>{
-        const waitLoop = ()=>{
-            if(!isPaused || !isReading){
-                resolve();
-                return;
-            }
-            setTimeout(waitLoop, 100);
-        }
-        waitLoop();
-    })
+// 英文標點替換
+function replacePunctuation(text){
+  text = text.replace(/\./g, " full stop ");
+  text = text.replace(/,/g, " comma ");
+  text = text.replace(/\?/g, " question mark ");
+  text = text.replace(/!/g, " exclamation mark ");
+  return text;
 }
 
 async function startRead(){
-    if(isReading) return;
-    const rawText = $("#textArea").value;
-    lines = rawText.split(/\r?\n/);
-    lines = lines.filter(x=>x.trim()!== "");
-    if(lines.length===0){alert("請輸入文字");return;}
+  if(isRunning) return;
+  isRunning = true;
+  isPaused = false;
+  synth.cancel();
+  const rawTxt = document.getElementById('txtInput').value;
+  const lines = rawTxt.split('\n').filter(x=>x.trim()!=='');
+  const repeat = Number(document.getElementById('repeatCount').value);
+  const gap = Number(document.getElementById('lineGap').value) * 1000;
+  const spRate = Number(document.getElementById('rate').value);
 
-    isReading = true;
-    isPaused = false;
-    $("#textArea").disabled = true;
-    currentRound = 0;
-    const voiceIndex = $("#voiceSelect").value;
-    voiceUsed = voiceList[voiceIndex];
-    isEngVoice = voiceUsed.lang.startsWith("en");
-    rateUsed = Number($("#rate").value);
+  document.getElementById('info').textContent = `開始，共${lines.length}行`;
 
-    while(currentRound < Number($("#totalRound").value) && isReading){
-        currentRound++;
-        currentLineIndex = 0;
-        while(currentLineIndex < lines.length && isReading){
-            const line = lines[currentLineIndex];
-            currentSegments = splitLineToSegments(line, isEngVoice);
-            segIndex = 0;
-            const repeatTimes = Number($("#repeatPerLine").value);
-            const repeatGap = Number($("#repeatGap").value)*1000;
-            const lineGap = Number($("#lineGap").value)*1000;
-            currentRepeatCount = 0;
-
-            while(currentRepeatCount < repeatTimes && isReading){
-                if(isPaused) await waitResume();
-                if(!isReading) return;
-                // 高亮當前行
-                $("#textArea").focus();
-                const fullTxt = $("#textArea").value;
-                let pos = 0;
-                for(let i=0;i<currentLineIndex;i++) pos += lines[i].length +1;
-                $("#textArea").setSelectionRange(pos, pos+line.length);
-
-                await speakCurrentSegments();
-
-                currentRepeatCount++;
-                if(currentRepeatCount < repeatTimes && isReading){
-                    await sleep(repeatGap);
-                }
-            }
-            currentLineIndex++;
-            if(isReading) await sleep(lineGap);
-        }
+  for(let li=0; li<lines.length; li++){
+    if(!isRunning) break;
+    while(isPaused) await sleep(300);
+    const oriLine = lines[li].trim();
+    let speakTxt = oriLine;
+    // 英文行替換標點
+    if(/[a-zA-Z]/.test(oriLine)){
+      speakTxt = replacePunctuation(oriLine);
     }
-    stopRead();
+    // ========== 每行重複迴圈（重點，之前版本呢度唔見咗） ==========
+    for(let rp=0; rp<repeat; rp++){
+      if(!isRunning) break;
+      while(isPaused) await sleep(300);
+      const u = new SpeechSynthesisUtterance(speakTxt);
+      u.rate = spRate;
+      // 揀英文聲音
+      if(/[a-zA-Z]/.test(oriLine)){
+        const voices = synth.getVoices();
+        const enVoice = voices.find(v=>v.lang.startsWith('en'));
+        if(enVoice) u.voice = enVoice;
+      }
+      await speakPromise(u);
+    }
+    document.getElementById('info').textContent = `讀到第${li+1}行`;
+    await sleep(gap);
+  }
+  document.getElementById('info').textContent = '全部讀完';
+  isRunning = false;
 }
 
-function pauseRead(){
-    if(!isReading) return;
-    isPaused = true;
+function speakPromise(u){
+  return new Promise(res=>{
+    u.onend = res;
+    synth.speak(u);
+  })
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+// 暫停繼續
+function togglePause(){
+  if(!isRunning) return;
+  isPaused = !isPaused;
+  if(isPaused){
     synth.pause();
-}
-function resumeRead(){
-    if(!isReading) return;
-    isPaused = false;
+    document.getElementById('info').textContent = "已暫停";
+  }else{
     synth.resume();
-}
-
-function speakPromise(utter){
-    return new Promise(resolve=>{
-        utter.onend = resolve;
-        utter.onerror = resolve;
-        synth.speak(utter);
-    })
-}
-function sleep(ms){
-    return new Promise(resolve=>setTimeout(resolve,ms));
+    document.getElementById('info').textContent = "繼續";
+  }
 }
 
 function stopRead(){
-    isReading = false;
-    isPaused = false;
-    synth.cancel();
-    $("#textArea").disabled = false;
-    $("#textArea").setSelectionRange(0,0);
+  isRunning = false;
+  isPaused = false;
+  synth.cancel();
+  document.getElementById('info').textContent = "已停止";
 }
+
+// 本地儲存
+function saveText(){
+  const t = document.getElementById('txtInput').value;
+  localStorage.setItem('memoVoiceText', t);
+  document.getElementById('info').textContent = "已儲存文字";
+}
+function loadText(){
+  const t = localStorage.getItem('memoVoiceText') || '';
+  document.getElementById('txtInput').value = t;
+  document.getElementById('info').textContent = "已載入文字";
+}
+
+// OCR 圖片辨識
+document.getElementById('ocrBtn').onclick = async ()=>{
+  const fileInput = document.getElementById('imgUpload');
+  if(!fileInput.files[0]){
+    document.getElementById('info').textContent = "請先揀圖片";
+    return;
+  }
+  document.getElementById('info').textContent = "OCR辨識中，請稍候...";
+  const result = await Tesseract.recognize(fileInput.files[0],'eng+chi-tra');
+  document.getElementById('txtInput').value = result.data.text;
+  document.getElementById('info').textContent = "OCR完成";
+}
+
+document.getElementById('playBtn').onclick = startRead;
+document.getElementById('pauseBtn').onclick = togglePause;
+document.getElementById('stopBtn').onclick = stopRead;
+
+synth.onvoiceschanged = ()=>synth.getVoices();
 </script>
 </body>
 </html>
