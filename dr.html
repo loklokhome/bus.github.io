@@ -2,14 +2,16 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.1</title>
+<title>默書發聲程式 v12.2</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
-body{max-width:920px;margin:16px auto;padding:16px;background:#f7f7f7;}
+body{max-width:960px;margin:16px auto;padding:16px;background:#f7f7f7;}
 h2{margin-top:0}
 .ctrl{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px}
 .ctrl>div{background:#fff;padding:8px;border-radius:6px}
+.voiceBox{background:#fff;padding:8px;border-radius:6px;margin-bottom:12px}
+select{width:100%;padding:6px;font-size:16px}
 textarea{width:100%;height:260px;padding:10px;font-size:16px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px}
 button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:pointer;background:#2563eb;color:white;margin:4px}
 #stopBtn{background:#dc2626}
@@ -19,7 +21,13 @@ button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:poin
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.1｜重複間隔 + 每行間隔</h2>
+<h2>默書發聲程式 v12.2｜語音選擇 + 重複間隔</h2>
+
+<div class="voiceBox">
+<label>選擇朗讀語音：</label>
+<select id="voiceSelect"></select>
+</div>
+
 <div class="ctrl">
 <div>
 <label>每行重複次數</label>
@@ -38,6 +46,7 @@ button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:poin
 <input type="number" id="rate" value="1" min="0.1" max="10" step="0.1">
 </div>
 </div>
+
 <div>
 <input type="file" id="imgUpload" accept="image/*">
 <button id="ocrBtn">OCR圖片辨識</button>
@@ -57,6 +66,22 @@ This is a test.</textarea>
 let synth = window.speechSynthesis;
 let isRunning = false;
 let isPaused = false;
+let voices = [];
+const voiceSelect = document.getElementById('voiceSelect');
+
+// 載入所有可用語音，填入下拉框
+function populateVoiceList() {
+  voices = synth.getVoices();
+  voiceSelect.innerHTML = '';
+  for(let i=0; i<voices.length; i++){
+    const option = document.createElement('option');
+    option.textContent = `${voices[i].name} (${voices[i].lang})`;
+    option.dataset.name = voices[i].name;
+    voiceSelect.appendChild(option);
+  }
+}
+populateVoiceList();
+synth.onvoiceschanged = populateVoiceList;
 
 // 英文標點替換
 function replacePunctuation(text){
@@ -75,9 +100,12 @@ async function startRead(){
   const rawTxt = document.getElementById('txtInput').value;
   const lines = rawTxt.split('\n').filter(x=>x.trim()!=='');
   const repeat = Number(document.getElementById('repeatCount').value);
-  const repeatGap = Number(document.getElementById('repeatGap').value) * 1000; // 同一行重複之間
-  const lineGap = Number(document.getElementById('lineGap').value) * 1000;   // 行與行之間
+  const repeatGap = Number(document.getElementById('repeatGap').value) * 1000;
+  const lineGap = Number(document.getElementById('lineGap').value) * 1000;
   const spRate = Number(document.getElementById('rate').value);
+  // 取用戶手動揀嘅語音
+  const selectedVoiceName = voiceSelect.selectedOptions[0].dataset.name;
+  const selectedVoice = voices.find(v=>v.name === selectedVoiceName);
 
   document.getElementById('info').textContent = `開始，共${lines.length}行`;
 
@@ -95,13 +123,8 @@ async function startRead(){
       while(isPaused) await sleep(300);
       const u = new SpeechSynthesisUtterance(speakTxt);
       u.rate = spRate;
-      if(/[a-zA-Z]/.test(oriLine)){
-        const voices = synth.getVoices();
-        const enVoice = voices.find(v=>v.lang.startsWith('en'));
-        if(enVoice) u.voice = enVoice;
-      }
+      if(selectedVoice) u.voice = selectedVoice;
       await speakPromise(u);
-      // 唔係最後一次重複，先加【重複間隔】
       if(rp !== repeat - 1){
         await sleep(repeatGap);
       }
@@ -169,8 +192,6 @@ document.getElementById('ocrBtn').onclick = async ()=>{
 document.getElementById('playBtn').onclick = startRead;
 document.getElementById('pauseBtn').onclick = togglePause;
 document.getElementById('stopBtn').onclick = stopRead;
-
-synth.onvoiceschanged = ()=>synth.getVoices();
 </script>
 </body>
 </html>
