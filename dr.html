@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.6</title>
+<title>默書發聲程式 v12.7</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui,sans-serif}
 body{max-width:920px;margin:16px auto;padding:16px;background:#f8f8f8}
@@ -12,23 +12,20 @@ textarea{width:100%;height:220px;padding:10px;font-size:16px;white-space:pre-wra
 .ctrl-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0}
 input,select,button{padding:8px;font-size:15px}
 button{cursor:pointer}
-.line-item{display:flex;gap:8px;align-items:center;margin:6px 0;border:1px solid #ddd;padding:8px;border-radius:6px}
-.line-text{flex:1}
-.line-input{width:60px}
 #log{height:100px;overflow:auto;background:#f4f4f4;padding:8px;font-size:13px}
 </style>
 </head>
 <body>
 <div class="panel">
-<h2>默書發聲程式 v12.6</h2>
+<h2>默書發聲程式 v12.7</h2>
 <div class="ctrl-row">
 <button id="loadOcr">上載圖片OCR辨識文字</button>
 <input type="file" id="imgFile" accept="image/*" hidden>
-<button id="splitBtn">拆分成行設定</button>
+<button id="splitBtn">拆分行</button>
 <button id="saveText">儲存文字</button>
 <button id="clearStorage">清除儲存</button>
 </div>
-<textarea id="mainText" placeholder="輸入文字，或上載圖片提取文字，按【拆分成行設定】"></textarea>
+<textarea id="mainText" placeholder="輸入文字，或上載圖片提取文字，按【拆分行】"></textarea>
 </div>
 
 <div class="panel">
@@ -36,6 +33,11 @@ button{cursor:pointer}
 <label>選擇語音：</label>
 <select id="voiceSelect"></select>
 <label>整體語速：<input type="range" id="rateRange" min="0.5" max="2" step="0.1" value="1"> <span id="rateVal">1</span></label>
+</div>
+<!-- 全局總設定 -->
+<div class="ctrl-row">
+<label>每行重複次數：<input id="globalRepeat" type="number" min="1" value="2" style="width:70px"></label>
+<label>重複間隔(秒)：<input id="globalInterval" type="number" min="0.2" step="0.1" value="1.5" style="width:70px"></label>
 </div>
 <div id="lineList"></div>
 <div class="ctrl-row">
@@ -52,8 +54,8 @@ let voices = [];
 let isPlaying = false;
 let isPaused = false;
 let currentUtter = null;
-let lineDataList = [];
-const storageKey = "memovoice_v126";
+let lineList = [];
+const storageKey = "memovoice_v127";
 
 // 載入已儲存文字
 window.onload = ()=>{
@@ -115,58 +117,47 @@ document.getElementById("clearStorage").onclick = ()=>{
   document.getElementById("log").innerText = "已清除儲存";
 }
 
-// 拆分行，建立每行設定：重複次數、重複間隔
+// 拆分行（只做顯示，唔會逐行設定）
 document.getElementById("splitBtn").onclick = ()=>{
   const txt = document.getElementById("mainText").value;
-  const lines = txt.split(/\r?\n/);
+  const lines = txt.split(/\r?\n/).filter(s=>s.trim()!="");
+  lineList = lines;
   const container = document.getElementById("lineList");
   container.innerHTML = "";
-  lineDataList = [];
   lines.forEach((line,idx)=>{
-    if(line.trim()==="")return;
-    const d = {text:line,repeat:1,interval:1.5};
-    lineDataList.push(d);
     const div = document.createElement("div");
-    div.className = "line-item";
-    div.innerHTML = `
-    <span>${idx+1}</span>
-    <div class="line-text">${escapeHtml(line)}</div>
-    <label>重複<input class="line-input rep" type="number" min="1" value="${d.repeat}"></label>
-    <label>間隔(秒)<input class="line-input intv" type="number" min="0.2" step="0.1" value="${d.interval}"></label>
-    `
+    div.style.padding="4px 0";
+    div.innerHTML = `<span>${idx+1}. </span>${escapeHtml(line)}`
     container.appendChild(div);
   })
-  // 監聽輸入，更新每行參數
-  const repInputs = container.querySelectorAll(".rep");
-  const intvInputs = container.querySelectorAll(".intv");
-  repInputs.forEach((inp,i)=>{
-    inp.oninput = ()=>{
-      lineDataList[i].repeat = Number(inp.value || 1);
-    }
-  })
-  intvInputs.forEach((inp,i)=>{
-    inp.oninput = ()=>{
-      lineDataList[i].interval = Number(inp.value || 1);
-    }
-  })
-  document.getElementById("log").innerText = "分行完成，可以設定每行重複同間隔";
+  document.getElementById("log").innerText = "分行完成，可設定全局重複及間隔";
 }
 function escapeHtml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-// 標點替換：根據揀選語音嘅語言自動切換
+// 標點替換：跟語言自動切換，中文標點會讀出
 function replacePunctByLang(text, voiceLang){
   const isEnglish = voiceLang.startsWith("en");
   if(isEnglish){
-    return text.replace(/\./g," full stop ");
+    //英文標點
+    return text
+    .replace(/\./g," full stop ")
+    .replace(/,/g," comma ")
+    .replace(/\?/g," question mark ")
+    .replace(/!/g," exclamation mark ");
   }else{
-    return text.replace(/\./g," 句號 ");
+    //中文標點
+    return text
+    .replace(/。/g," 句號 ")
+    .replace(/，/g," 逗號 ")
+    .replace(/？/g," 問號 ")
+    .replace(/！/g," 感嘆號 ");
   }
 }
 
 // 開始朗讀
 document.getElementById("startBtn").onclick = async ()=>{
-  if(lineDataList.length===0){
-    document.getElementById("log").innerText = "請先按【拆分成行設定】";
+  if(lineList.length===0){
+    document.getElementById("log").innerText = "請先按【拆分行】";
     return;
   }
   speechSynthesis.cancel();
@@ -174,18 +165,20 @@ document.getElementById("startBtn").onclick = async ()=>{
   const voiceIdx = Number(document.getElementById("voiceSelect").value);
   const voice = voices[voiceIdx];
   const rate = Number(document.getElementById("rateRange").value);
+  const repeatCount = Number(document.getElementById("globalRepeat").value||1);
+  const intervalSec = Number(document.getElementById("globalInterval").value||1.5);
   const log = document.getElementById("log");
   log.innerText="開始朗讀";
 
-  for(const line of lineDataList){
+  for(const line of lineList){
     if(!isPlaying)break;
-    const speakTxt = replacePunctByLang(line.text, voice.lang);
-    // 本行重複指定次數
-    for(let r=0;r < line.repeat;r++){
+    const speakTxt = replacePunctByLang(line, voice.lang);
+    // 本行重複【全局設定】次數
+    for(let r=0;r < repeatCount;r++){
       if(!isPlaying)break;
       await speakAndWait(speakTxt,voice,rate);
       if(!isPlaying)break;
-      await sleep(line.interval * 1000);
+      await sleep(intervalSec * 1000);
     }
   }
   log.innerText="全部朗讀完畢";
