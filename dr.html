@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.2</title>
+<title>默書發聲程式 v12.3</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
@@ -21,7 +21,7 @@ button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:poin
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.2｜語音選擇 + 重複間隔</h2>
+<h2>默書發聲程式 v12.3｜中英都讀標點</h2>
 
 <div class="voiceBox">
 <label>選擇朗讀語音：</label>
@@ -54,7 +54,8 @@ button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:poin
 <button onclick="loadText()">讀取已儲存</button>
 </div>
 <textarea id="txtInput" placeholder="貼上文字，每行一句">Hello.
-This is a test.</textarea>
+這是測試，中文。
+你好！對嗎？</textarea>
 <div>
 <button id="playBtn">開始朗讀</button>
 <button id="pauseBtn">暫停 / 繼續</button>
@@ -69,7 +70,7 @@ let isPaused = false;
 let voices = [];
 const voiceSelect = document.getElementById('voiceSelect');
 
-// 載入所有可用語音，填入下拉框
+// 載入所有可用語音
 function populateVoiceList() {
   voices = synth.getVoices();
   voiceSelect.innerHTML = '';
@@ -83,12 +84,25 @@ function populateVoiceList() {
 populateVoiceList();
 synth.onvoiceschanged = populateVoiceList;
 
-// 英文標點替換
-function replacePunctuation(text){
-  text = text.replace(/\./g, " full stop ");
-  text = text.replace(/,/g, " comma ");
-  text = text.replace(/\?/g, " question mark ");
-  text = text.replace(/!/g, " exclamation mark ");
+// 標點對照表
+const punctMap = {
+  ".":{cn:"句號", en:"full stop"},
+  ",":{cn:"逗號", en:"comma"},
+  "?":{cn:"問號", en:"question mark"},
+  "!":{cn:"感嘆號", en:"exclamation mark"},
+  "。":{cn:"句號", en:"full stop"},
+  "，":{cn:"逗號", en:"comma"},
+  "？":{cn:"問號", en:"question mark"},
+  "！":{cn:"感嘆號", en:"exclamation mark"}
+};
+
+// 處理標點：判斷係咪英文語音，揀對應讀音
+function replacePunctuation(text, isEnglishVoice){
+  for(const ch in punctMap){
+    const val = punctMap[ch];
+    const readWord = isEnglishVoice ? val.en : val.cn;
+    text = text.replace(new RegExp(ch,"g"), ` ${readWord} `);
+  }
   return text;
 }
 
@@ -103,9 +117,11 @@ async function startRead(){
   const repeatGap = Number(document.getElementById('repeatGap').value) * 1000;
   const lineGap = Number(document.getElementById('lineGap').value) * 1000;
   const spRate = Number(document.getElementById('rate').value);
-  // 取用戶手動揀嘅語音
+
   const selectedVoiceName = voiceSelect.selectedOptions[0].dataset.name;
   const selectedVoice = voices.find(v=>v.name === selectedVoiceName);
+  // 判斷當前揀嘅聲音係咪英文
+  const isEngVoice = selectedVoice && selectedVoice.lang.startsWith("en");
 
   document.getElementById('info').textContent = `開始，共${lines.length}行`;
 
@@ -113,10 +129,9 @@ async function startRead(){
     if(!isRunning) break;
     while(isPaused) await sleep(300);
     const oriLine = lines[li].trim();
-    let speakTxt = oriLine;
-    if(/[a-zA-Z]/.test(oriLine)){
-      speakTxt = replacePunctuation(oriLine);
-    }
+    // 無論中文定英文，全部做標點替換
+    const speakTxt = replacePunctuation(oriLine, isEngVoice);
+
     // 同一行重複讀
     for(let rp=0; rp<repeat; rp++){
       if(!isRunning) break;
