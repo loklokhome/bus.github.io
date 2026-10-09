@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.3</title>
+<title>默書發聲程式 v12.4｜分段讀標點，解決讀唔到問題</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;font-family:system-ui, sans-serif;}
@@ -21,7 +21,7 @@ button{padding:9px 14px;font-size:16px;border:none;border-radius:6px;cursor:poin
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.3｜中英都讀標點</h2>
+<h2>默書發聲程式 v12.4｜分段朗讀標點</h2>
 
 <div class="voiceBox">
 <label>選擇朗讀語音：</label>
@@ -95,15 +95,39 @@ const punctMap = {
   "？":{cn:"問號", en:"question mark"},
   "！":{cn:"感嘆號", en:"exclamation mark"}
 };
+const punctChars = Object.keys(punctMap);
 
-// 處理標點：判斷係咪英文語音，揀對應讀音
-function replacePunctuation(text, isEnglishVoice){
-  for(const ch in punctMap){
-    const val = punctMap[ch];
-    const readWord = isEnglishVoice ? val.en : val.cn;
-    text = text.replace(new RegExp(ch,"g"), ` ${readWord} `);
+// 拆分句子：文字同標點分開，變成陣列
+function splitTextToSegments(text, isEnglishVoice){
+  let segments = [];
+  let buffer = "";
+  for(let ch of text){
+    if(punctChars.includes(ch)){
+      if(buffer.trim() !== ""){
+        segments.push(buffer.trim());
+        buffer = "";
+      }
+      const p = punctMap[ch];
+      const readName = isEnglishVoice ? p.en : p.cn;
+      segments.push(readName);
+    }else{
+      buffer += ch;
+    }
   }
-  return text;
+  if(buffer.trim() !== ""){
+    segments.push(buffer.trim());
+  }
+  return segments;
+}
+
+// 朗讀一段文字
+async function speakSegment(text, voice, rate){
+  if(!isRunning) return;
+  while(isPaused) await sleep(300);
+  const u = new SpeechSynthesisUtterance(text);
+  if(voice) u.voice = voice;
+  u.rate = rate;
+  await speakPromise(u);
 }
 
 async function startRead(){
@@ -120,7 +144,6 @@ async function startRead(){
 
   const selectedVoiceName = voiceSelect.selectedOptions[0].dataset.name;
   const selectedVoice = voices.find(v=>v.name === selectedVoiceName);
-  // 判斷當前揀嘅聲音係咪英文
   const isEngVoice = selectedVoice && selectedVoice.lang.startsWith("en");
 
   document.getElementById('info').textContent = `開始，共${lines.length}行`;
@@ -129,17 +152,16 @@ async function startRead(){
     if(!isRunning) break;
     while(isPaused) await sleep(300);
     const oriLine = lines[li].trim();
-    // 無論中文定英文，全部做標點替換
-    const speakTxt = replacePunctuation(oriLine, isEngVoice);
+    const segList = splitTextToSegments(oriLine, isEngVoice);
 
-    // 同一行重複讀
+    // 同一行重複多次
     for(let rp=0; rp<repeat; rp++){
       if(!isRunning) break;
       while(isPaused) await sleep(300);
-      const u = new SpeechSynthesisUtterance(speakTxt);
-      u.rate = spRate;
-      if(selectedVoice) u.voice = selectedVoice;
-      await speakPromise(u);
+      // 逐段讀（文字、標點分開）
+      for(const seg of segList){
+        await speakSegment(seg, selectedVoice, spRate);
+      }
       if(rp !== repeat - 1){
         await sleep(repeatGap);
       }
