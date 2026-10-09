@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.5</title>
+<title>默書發聲程式 v12.6</title>
 <style>
 *{box-sizing:border-box;font-family:system-ui,sans-serif}
 body{max-width:920px;margin:16px auto;padding:16px;background:#f8f8f8}
@@ -20,7 +20,7 @@ button{cursor:pointer}
 </head>
 <body>
 <div class="panel">
-<h2>默書發聲程式 v12.5</h2>
+<h2>默書發聲程式 v12.6</h2>
 <div class="ctrl-row">
 <button id="loadOcr">上載圖片OCR辨識文字</button>
 <input type="file" id="imgFile" accept="image/*" hidden>
@@ -49,12 +49,11 @@ button{cursor:pointer}
 <script>
 // 全域變數
 let voices = [];
-let utterQueue = [];
 let isPlaying = false;
 let isPaused = false;
 let currentUtter = null;
 let lineDataList = [];
-const storageKey = "memovoice_v125";
+const storageKey = "memovoice_v126";
 
 // 載入已儲存文字
 window.onload = ()=>{
@@ -137,26 +136,29 @@ document.getElementById("splitBtn").onclick = ()=>{
     `
     container.appendChild(div);
   })
-  // 監聽輸入，更新參數
-  container.querySelectorAll(".rep").forEach((inp,i)=>{
-    inp.oninput = ()=>lineDataList[i].repeat = Number(inp.value||1);
+  // 監聽輸入，更新每行參數
+  const repInputs = container.querySelectorAll(".rep");
+  const intvInputs = container.querySelectorAll(".intv");
+  repInputs.forEach((inp,i)=>{
+    inp.oninput = ()=>{
+      lineDataList[i].repeat = Number(inp.value || 1);
+    }
   })
-  container.querySelectorAll(".intv").forEach((inp,i)=>{
-    inp.oninput = ()=>lineDataList[i].interval = Number(inp.value||1);
+  intvInputs.forEach((inp,i)=>{
+    inp.oninput = ()=>{
+      lineDataList[i].interval = Number(inp.value || 1);
+    }
   })
   document.getElementById("log").innerText = "分行完成，可以設定每行重複同間隔";
 }
 function escapeHtml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-// 【重點】根據揀選嘅語音語言，自動轉換標點讀法
+// 標點替換：根據揀選語音嘅語言自動切換
 function replacePunctByLang(text, voiceLang){
-  // 判斷是否英文語音
   const isEnglish = voiceLang.startsWith("en");
   if(isEnglish){
-    // 英文語音：. → full stop
     return text.replace(/\./g," full stop ");
   }else{
-    // 中文（粵語/國語）語音：. → 句號
     return text.replace(/\./g," 句號 ");
   }
 }
@@ -177,14 +179,13 @@ document.getElementById("startBtn").onclick = async ()=>{
 
   for(const line of lineDataList){
     if(!isPlaying)break;
-    // 傳入當前語音嘅語言代碼，決定標點讀法
     const speakTxt = replacePunctByLang(line.text, voice.lang);
     // 本行重複指定次數
-    for(let r=0;r<line.repeat;r++){
+    for(let r=0;r < line.repeat;r++){
       if(!isPlaying)break;
       await speakAndWait(speakTxt,voice,rate);
       if(!isPlaying)break;
-      await sleep(line.interval*1000);
+      await sleep(line.interval * 1000);
     }
   }
   log.innerText="全部朗讀完畢";
