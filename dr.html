@@ -4,221 +4,174 @@
 <meta charset="UTF-8">
 <title>默書發聲程式 v12.7</title>
 <style>
-*{box-sizing:border-box;font-family:system-ui,sans-serif}
-body{max-width:920px;margin:16px auto;padding:16px;background:#f8f8f8}
-h2{margin:0 0 12px}
-.panel{background:#fff;padding:14px;border-radius:10px;margin-bottom:12px;box-shadow:0 1px 4px #0002}
-textarea{width:100%;height:220px;padding:10px;font-size:16px;white-space:pre-wrap}
-.ctrl-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0}
-input,select,button{padding:8px;font-size:15px}
-button{cursor:pointer}
-#log{height:100px;overflow:auto;background:#f4f4f4;padding:8px;font-size:13px}
+body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: 0 auto; }
+textarea { width: 100%; height: 140px; }
+button { margin: 4px; padding: 6px 12px; }
+.line-item { margin: 4px 0; }
 </style>
 </head>
 <body>
-<div class="panel">
 <h2>默書發聲程式 v12.7</h2>
-<div class="ctrl-row">
-<button id="loadOcr">上載圖片OCR辨識文字</button>
-<input type="file" id="imgFile" accept="image/*" hidden>
-<button id="splitBtn">拆分行</button>
-<button id="saveText">儲存文字</button>
-<button id="clearStorage">清除儲存</button>
-</div>
-<textarea id="mainText" placeholder="輸入文字，或上載圖片提取文字，按【拆分行】"></textarea>
+
+<div>
+  <label>文字輸入：</label>
+  <textarea id="inputText"></textarea>
 </div>
 
-<div class="panel">
-<div class="ctrl-row">
-<label>選擇語音：</label>
-<select id="voiceSelect"></select>
-<label>整體語速：<input type="range" id="rateRange" min="0.1" max="2" step="0.1" value="0.1"> <span id="rateVal">1</span></label>
+<div style="margin: 8px 0;">
+  <button onclick="splitLines()">拆分行</button>
+  <button onclick="saveText()">儲存文字</button>
+  <button onclick="loadText()">讀取文字</button>
 </div>
-<!-- 全局總設定 -->
-<div class="ctrl-row">
-<label>每行重複次數：<input id="globalRepeat" type="number" min="1" value="2" style="width:70px"></label>
-<label>重複間隔(秒)：<input id="globalInterval" type="number" min="0.2" step="0.1" value="1.5" style="width:70px"></label>
+
+<div id="lineContainer"></div>
+
+<div style="margin: 12px 0;">
+  <label>每行重複次數：</label>
+  <input type="number" id="repeatCount" value="2" min="1">
 </div>
-<div id="lineList"></div>
-<div class="ctrl-row">
-<button id="startBtn">開始朗讀</button>
-<button id="pauseBtn">暫停 / 繼續</button>
-<button id="stopBtn">停止</button>
+<div style="margin: 12px 0;">
+  <label>重複間隔 (秒)：</label>
+  <input type="number" id="repeatGap" value="1.5" min="0.1" step="0.1">
 </div>
-<div id="log"></div>
+
+<div style="margin: 12px 0;">
+  <label>揀語音：</label>
+  <select id="voiceSelect">
+    <option value="cantonese">粵語</option>
+    <option value="mandarin">普通話</option>
+    <option value="english">英文</option>
+  </select>
+</div>
+
+<div style="margin: 12px 0;">
+  <button onclick="startSpeak()">開始朗讀</button>
+  <button onclick="pauseSpeak()">暫停 / 繼續</button>
+  <button onclick="stopSpeak()">停止</button>
 </div>
 
 <script>
-// 全域變數
-let voices = [];
-let isPlaying = false;
+let lineList = [];
+let utterList = [];
+let currentIndex = 0;
+let repeatIdx = 0;
+let globalTimer = null;
 let isPaused = false;
 let currentUtter = null;
-let lineList = [];
-const storageKey = "memovoice_v127";
 
-// 載入已儲存文字
-window.onload = ()=>{
-  const saved = localStorage.getItem(storageKey);
-  if(saved) document.getElementById("mainText").value = saved;
-  loadVoices();
-  speechSynthesis.onvoiceschanged = loadVoices;
+function splitLines(){
+  const raw = document.getElementById('inputText').value;
+  lineList = raw.split(/\r?\n/).filter(x=>x.trim()!=='');
+  renderLines();
 }
 
-// 載入語音清單
-function loadVoices(){
-  voices = speechSynthesis.getVoices();
-  const sel = document.getElementById("voiceSelect");
-  sel.innerHTML = "";
-  voices.forEach((v,i)=>{
-    const opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = v.name + " ("+v.lang+")";
-    sel.appendChild(opt);
-  })
-}
-
-// 語速顯示
-document.getElementById("rateRange").oninput = e=>{
-  document.getElementById("rateVal").textContent = e.target.value;
-}
-
-// OCR上載
-document.getElementById("loadOcr").onclick = ()=>document.getElementById("imgFile").click();
-document.getElementById("imgFile").onchange = async e=>{
-  const file = e.target.files[0];
-  if(!file)return;
-  const log = document.getElementById("log");
-  log.innerText = "OCR處理中，請稍候...";
-  const reader = new FileReader();
-  reader.onload = async ev=>{
-    const img = new Image();
-    img.src = ev.target.result;
-    await new Promise(r=>img.onload=r);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = img.width;canvas.height=img.height;
-    ctx.drawImage(img,0,0);
-    const res = await Tesseract.recognize(canvas,"chi_tra+eng",{logger:m=>log.innerText=m.status});
-    document.getElementById("mainText").value = res.data.text;
-    log.innerText = "OCR完成！";
-  }
-  reader.readAsDataURL(file);
-}
-
-// 儲存文字
-document.getElementById("saveText").onclick = ()=>{
-  localStorage.setItem(storageKey,document.getElementById("mainText").value);
-  document.getElementById("log").innerText = "已儲存";
-}
-document.getElementById("clearStorage").onclick = ()=>{
-  localStorage.removeItem(storageKey);
-  document.getElementById("mainText").value="";
-  document.getElementById("log").innerText = "已清除儲存";
-}
-
-// 拆分行（只做顯示，唔會逐行設定）
-document.getElementById("splitBtn").onclick = ()=>{
-  const txt = document.getElementById("mainText").value;
-  const lines = txt.split(/\r?\n/).filter(s=>s.trim()!="");
-  lineList = lines;
-  const container = document.getElementById("lineList");
-  container.innerHTML = "";
-  lines.forEach((line,idx)=>{
-    const div = document.createElement("div");
-    div.style.padding="4px 0";
-    div.innerHTML = `<span>${idx+1}. </span>${escapeHtml(line)}`
+function renderLines(){
+  const container = document.getElementById('lineContainer');
+  container.innerHTML = '';
+  lineList.forEach((txt,i)=>{
+    const div = document.createElement('div');
+    div.className = 'line-item';
+    div.innerText = `${i+1}. ${txt}`;
     container.appendChild(div);
   })
-  document.getElementById("log").innerText = "分行完成，可設定全局重複及間隔";
 }
-function escapeHtml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-// 標點替換：跟語言自動切換，中文標點會讀出
-function replacePunctByLang(text, voiceLang){
-  const isEnglish = voiceLang.startsWith("en");
-  if(isEnglish){
-    //英文標點
-    return text
-    .replace(/\./g," full stop ")
-    .replace(/,/g," comma ")
-    .replace(/\?/g," question mark ")
-    .replace(/!/g," exclamation mark ");
-  }else{
-    //中文標點
-    return text
-    .replace(/。/g," 句號 ")
-    .replace(/，/g," 逗號 ")
-    .replace(/？/g," 問號 ")
-    .replace(/！/g," 感嘆號 ");
+function saveText(){
+  localStorage.setItem('memoText', document.getElementById('inputText').value);
+  alert('已儲存');
+}
+
+function loadText(){
+  const t = localStorage.getItem('memoText');
+  if(t){
+    document.getElementById('inputText').value = t;
+    splitLines();
+    alert('已讀取');
+  } else {
+    alert('冇已儲存嘅文字');
   }
 }
 
-// 開始朗讀
-document.getElementById("startBtn").onclick = async ()=>{
-  if(lineList.length===0){
-    document.getElementById("log").innerText = "請先按【拆分行】";
+function replacePunctuation(text, voiceType){
+  if (voiceType === 'english'){
+    return text.replace(/\./g, ' full stop ');
+  } else {
+    return text
+      .replace(/，/g, ' 逗號 ')
+      .replace(/。/g, ' 句號 ')
+      .replace(/？/g, ' 問號 ')
+      .replace(/！/g, ' 感嘆號 ');
+  }
+}
+
+function getVoice(voiceType){
+  const voices = speechSynthesis.getVoices();
+  if (voiceType === 'cantonese'){
+    return voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-HK') || voices[0];
+  } else if (voiceType === 'mandarin'){
+    return voices.find(v => v.lang === 'zh-CN' || v.lang === 'zh') || voices[0];
+  } else {
+    return voices.find(v => v.lang.startsWith('en')) || voices[0];
+  }
+}
+
+function speakOne(){
+  if (currentIndex >= lineList.length) {
+    clearTimeout(globalTimer);
     return;
   }
-  speechSynthesis.cancel();
-  isPlaying=true;isPaused=false;
-  const voiceIdx = Number(document.getElementById("voiceSelect").value);
-  const voice = voices[voiceIdx];
-  const rate = Number(document.getElementById("rateRange").value);
-  const repeatCount = Number(document.getElementById("globalRepeat").value||1);
-  const intervalSec = Number(document.getElementById("globalInterval").value||1.5);
-  const log = document.getElementById("log");
-  log.innerText="開始朗讀";
+  const voiceType = document.getElementById('voiceSelect').value;
+  const repeatCount = Number(document.getElementById('repeatCount').value);
+  const gapSec = Number(document.getElementById('repeatGap').value);
 
-  for(const line of lineList){
-    if(!isPlaying)break;
-    const speakTxt = replacePunctByLang(line, voice.lang);
-    // 本行重複【全局設定】次數
-    for(let r=0;r < repeatCount;r++){
-      if(!isPlaying)break;
-      await speakAndWait(speakTxt,voice,rate);
-      if(!isPlaying)break;
-      await sleep(intervalSec * 1000);
+  let srcText = lineList[currentIndex];
+  const speakText = replacePunctuation(srcText, voiceType);
+  const voiceObj = getVoice(voiceType);
+
+  currentUtter = new SpeechSynthesisUtterance(speakText);
+  if (voiceObj) currentUtter.voice = voiceObj;
+
+  speechSynthesis.speak(currentUtter);
+
+  currentUtter.onend = () => {
+    repeatIdx += 1;
+    if (repeatIdx < repeatCount) {
+      globalTimer = setTimeout(speakOne, gapSec * 1000);
+    } else {
+      repeatIdx = 0;
+      currentIndex += 1;
+      globalTimer = setTimeout(speakOne, gapSec * 1000);
     }
   }
-  log.innerText="全部朗讀完畢";
-  isPlaying=false;
 }
 
-function speakAndWait(text,voice,rate){
-  return new Promise(res=>{
-    const u = new SpeechSynthesisUtterance(text);
-    u.voice = voice;
-    u.rate = rate;
-    currentUtter = u;
-    u.onend = ()=>res();
-    u.onerror = ()=>res();
-    speechSynthesis.speak(u);
-  })
+function startSpeak(){
+  stopSpeak();
+  currentIndex = 0;
+  repeatIdx = 0;
+  isPaused = false;
+  speakOne();
 }
-function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 
-// 暫停 / 繼續
-document.getElementById("pauseBtn").onclick = ()=>{
-  if(!isPlaying)return;
-  if(!isPaused){
-    speechSynthesis.pause();
-    isPaused=true;
-    document.getElementById("log").innerText="已暫停";
-  }else{
+function pauseSpeak(){
+  if (isPaused){
     speechSynthesis.resume();
-    isPaused=false;
-    document.getElementById("log").innerText="繼續朗讀";
+    isPaused = false;
+  } else {
+    speechSynthesis.pause();
+    isPaused = true;
   }
 }
-// 停止
-document.getElementById("stopBtn").onclick = ()=>{
+
+function stopSpeak(){
+  clearTimeout(globalTimer);
   speechSynthesis.cancel();
-  isPlaying=false;isPaused=false;
-  document.getElementById("log").innerText="已停止";
+  currentIndex = 0;
+  repeatIdx = 0;
+  isPaused = false;
 }
+
+speechSynthesis.onvoiceschanged = () => {};
 </script>
-<!-- OCR庫 -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 </body>
 </html>
