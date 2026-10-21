@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.7（普通話強化修復）</title>
+<title>默書發聲程式 v12.7（補語速）</title>
 <style>
 body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: 0 auto; }
 textarea { width: 100%; height: 140px; }
@@ -13,7 +13,7 @@ pre { background:#f4f4f4; padding: 8px; overflow:auto; font-size: 12px; }
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.7（普通話強化修復）</h2>
+<h2>默書發聲程式 v12.7（補語速）</h2>
 
 <div>
   <label>文字輸入：</label>
@@ -38,6 +38,10 @@ pre { background:#f4f4f4; padding: 8px; overflow:auto; font-size: 12px; }
 <div style="margin: 12px 0;">
   <label>重複間隔 (秒)：</label>
   <input type="number" id="repeatGap" value="1.5" min="0.1" step="0.1">
+</div>
+<div style="margin: 12px 0;">
+  <label>語速（1.0＝正常）：</label>
+  <input type="number" id="speechRate" value="1.0" min="0.1" max="10" step="0.1">
 </div>
 
 <div style="margin: 12px 0;">
@@ -148,6 +152,7 @@ function speakOne(){
   const voiceType = document.getElementById('voiceSelect').value;
   const repeatCount = Number(document.getElementById('repeatCount').value);
   const gapSec = Number(document.getElementById('repeatGap').value);
+  const rateVal = Number(document.getElementById('speechRate').value);
 
   let srcText = lineList[currentIndex];
   const speakText = replacePunctuation(srcText, voiceType);
@@ -155,6 +160,7 @@ function speakOne(){
 
   currentUtter = new SpeechSynthesisUtterance(speakText);
   currentUtter.lang = voicePack.lang;
+  currentUtter.rate = rateVal;
   if (voicePack.voice) {
     currentUtter.voice = voicePack.voice;
   }
