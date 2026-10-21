@@ -2,17 +2,18 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.7（普通話修復版）</title>
+<title>默書發聲程式 v12.7（普通話強化修復）</title>
 <style>
 body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: 0 auto; }
 textarea { width: 100%; height: 140px; }
 button { margin: 4px; padding: 6px 12px; }
 .line-item { margin: 4px 0; }
 .info { color:#666; font-size:14px }
+pre { background:#f4f4f4; padding: 8px; overflow:auto; font-size: 12px; }
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.7（普通話修復版）</h2>
+<h2>默書發聲程式 v12.7（普通話強化修復）</h2>
 
 <div>
   <label>文字輸入：</label>
@@ -23,7 +24,10 @@ button { margin: 4px; padding: 6px 12px; }
   <button onclick="splitLines()">拆分行</button>
   <button onclick="saveText()">儲存文字</button>
   <button onclick="loadText()">讀取文字</button>
+  <button onclick="listVoices()">列出已載語音</button>
 </div>
+
+<pre id="voiceInfo"></pre>
 
 <div id="lineContainer"></div>
 
@@ -44,7 +48,7 @@ button { margin: 4px; padding: 6px 12px; }
     <option value="english">英文</option>
   </select>
 </div>
-<div class="info">備註：首次開啟最好等幾秒，等瀏覽載齊語音包先按開始</div>
+<div class="info">備註：開啟頁面後等幾秒，再按「列出已載語音」檢查系統有冇普通話聲音</div>
 
 <div style="margin: 12px 0;">
   <button onclick="startSpeak()">開始朗讀</button>
@@ -59,7 +63,6 @@ let repeatIdx = 0;
 let globalTimer = null;
 let isPaused = false;
 let currentUtter = null;
-let voiceReady = false;
 
 function splitLines(){
   const raw = document.getElementById('inputText').value;
@@ -106,21 +109,35 @@ function replacePunctuation(text, voiceType){
   }
 }
 
-function getVoice(voiceType){
+function listVoices(){
   const voices = speechSynthesis.getVoices();
-  if (!voices || voices.length === 0) return null;
+  let out = '';
+  voices.forEach((v, idx)=>{
+    out += `[${idx}] name: ${v.name} | lang: ${v.lang}\n`;
+  })
+  document.getElementById('voiceInfo').innerText = out;
+}
+
+function getVoiceAndLang(voiceType){
+  const voices = speechSynthesis.getVoices();
+  let targetLang = '';
+  let targetVoice = null;
 
   if (voiceType === 'cantonese'){
-    return voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-HK') || voices[0];
+    targetLang = 'zh-HK';
+    targetVoice = voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-HK');
   } else if (voiceType === 'mandarin'){
-    // 放鬆普通話匹配條件，兼容唔同瀏覽器命名
-    return voices.find(v => {
+    targetLang = 'zh-CN';
+    targetVoice = voices.find(v => {
       const l = v.lang.toLowerCase();
-      return l === 'zh-cn' || l === 'zh' || l.startsWith('zh');
-    }) || voices[0];
+      return l === 'zh-cn' || l === 'zh';
+    });
   } else {
-    return voices.find(v => v.lang.startsWith('en')) || voices[0];
+    targetLang = 'en-US';
+    targetVoice = voices.find(v => v.lang.startsWith('en'));
   }
+
+  return { voice: targetVoice, lang: targetLang };
 }
 
 function speakOne(){
@@ -134,11 +151,12 @@ function speakOne(){
 
   let srcText = lineList[currentIndex];
   const speakText = replacePunctuation(srcText, voiceType);
-  const voiceObj = getVoice(voiceType);
+  const voicePack = getVoiceAndLang(voiceType);
 
   currentUtter = new SpeechSynthesisUtterance(speakText);
-  if (voiceObj) {
-    currentUtter.voice = voiceObj;
+  currentUtter.lang = voicePack.lang;
+  if (voicePack.voice) {
+    currentUtter.voice = voicePack.voice;
   }
 
   speechSynthesis.speak(currentUtter);
@@ -181,9 +199,7 @@ function stopSpeak(){
   isPaused = false;
 }
 
-// 等待語音載完成
 speechSynthesis.onvoiceschanged = () => {
-  voiceReady = true;
 };
 </script>
 </body>
