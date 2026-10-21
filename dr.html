@@ -2,16 +2,17 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>默書發聲程式 v12.7</title>
+<title>默書發聲程式 v12.7（普通話修復版）</title>
 <style>
 body { font-family: sans-serif; padding: 16px; max-width: 900px; margin: 0 auto; }
 textarea { width: 100%; height: 140px; }
 button { margin: 4px; padding: 6px 12px; }
 .line-item { margin: 4px 0; }
+.info { color:#666; font-size:14px }
 </style>
 </head>
 <body>
-<h2>默書發聲程式 v12.7</h2>
+<h2>默書發聲程式 v12.7（普通話修復版）</h2>
 
 <div>
   <label>文字輸入：</label>
@@ -43,6 +44,7 @@ button { margin: 4px; padding: 6px 12px; }
     <option value="english">英文</option>
   </select>
 </div>
+<div class="info">備註：首次開啟最好等幾秒，等瀏覽載齊語音包先按開始</div>
 
 <div style="margin: 12px 0;">
   <button onclick="startSpeak()">開始朗讀</button>
@@ -52,12 +54,12 @@ button { margin: 4px; padding: 6px 12px; }
 
 <script>
 let lineList = [];
-let utterList = [];
 let currentIndex = 0;
 let repeatIdx = 0;
 let globalTimer = null;
 let isPaused = false;
 let currentUtter = null;
+let voiceReady = false;
 
 function splitLines(){
   const raw = document.getElementById('inputText').value;
@@ -106,10 +108,16 @@ function replacePunctuation(text, voiceType){
 
 function getVoice(voiceType){
   const voices = speechSynthesis.getVoices();
+  if (!voices || voices.length === 0) return null;
+
   if (voiceType === 'cantonese'){
     return voices.find(v => v.lang === 'zh-HK' || v.lang === 'yue-HK') || voices[0];
   } else if (voiceType === 'mandarin'){
-    return voices.find(v => v.lang === 'zh-CN' || v.lang === 'zh') || voices[0];
+    // 放鬆普通話匹配條件，兼容唔同瀏覽器命名
+    return voices.find(v => {
+      const l = v.lang.toLowerCase();
+      return l === 'zh-cn' || l === 'zh' || l.startsWith('zh');
+    }) || voices[0];
   } else {
     return voices.find(v => v.lang.startsWith('en')) || voices[0];
   }
@@ -129,7 +137,9 @@ function speakOne(){
   const voiceObj = getVoice(voiceType);
 
   currentUtter = new SpeechSynthesisUtterance(speakText);
-  if (voiceObj) currentUtter.voice = voiceObj;
+  if (voiceObj) {
+    currentUtter.voice = voiceObj;
+  }
 
   speechSynthesis.speak(currentUtter);
 
@@ -171,7 +181,10 @@ function stopSpeak(){
   isPaused = false;
 }
 
-speechSynthesis.onvoiceschanged = () => {};
+// 等待語音載完成
+speechSynthesis.onvoiceschanged = () => {
+  voiceReady = true;
+};
 </script>
 </body>
 </html>
