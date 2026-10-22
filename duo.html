@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>香港Apple店 iPhone Duo 庫存實時監控</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,sans-serif;}
+body{padding:16px;background:#f7f7f7;max-width:1100px;margin:0 auto;}
+h2{color:#111;border-bottom:1px solid #ddd;padding-bottom:8px;}
+.panel{background:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 1px 4px #ccc;margin:12px 0;}
+.row{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0;}
+input{padding:6px;width:120px;}
+button{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:14px;}
+.btn-start{background:#0071e3;color:white;}
+.btn-stop{background:#ff3b30;color:white;}
+table{width:100%;border-collapse:collapse;margin-top:10px;}
+th,td{padding:10px 12px;text-align:left;border:1px solid #eee;}
+th{background:#f2f2f2;}
+.instock{background:#d4edda;color:#155724;font-weight:bold;}
+.outstock{background:#f8d7da;color:#721c24;}
+.log-box{height:180px;overflow-y:auto;background:#f9f9f9;padding:10px;border-radius:6px;font-size:13px;margin-top:10px;}
+</style>
+</head>
+<body>
+<h2>香港Apple Store｜iPhone Duo 現貨監控器</h2>
+
+<div class="panel">
+  <div class="row">
+    <div>
+      <label>輪詢間隔(秒)：</label>
+      <input type="number" id="intervalSec" value="20" min="10" max="300">
+    </div>
+    <div>
+      <button class="btn-start" id="startBtn">開始監控</button>
+      <button class="btn-stop" id="stopBtn">停止監控</button>
+    </div>
+    <div>
+      <span>狀態：</span>
+      <span id="statusText">未啟動</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>門店庫存一覽</h4>
+  <table>
+    <thead>
+      <tr>
+        <th>門店名稱</th>
+        <th>星光白 256GB</th>
+        <th>星光白 512GB</th>
+        <th>夜空黑 256GB</th>
+        <th>夜空黑 512GB</th>
+        <th>最後更新</th>
+      </tr>
+    </thead>
+    <tbody id="stockTable">
+      <tr><td colspan="6">等待開始查詢……</td></tr>
+    </tbody>
+  </table>
+
+  <div class="log-box" id="logBox"></div>
+</div>
+
+<script>
+// ========== 配置區（香港門店+iPhone Duo零件編號） ==========
+// 香港Apple Store門店清單（storeNumber）
+const STORE_LIST = [
+  {name:"銅鑼灣希慎廣場", id:"R062"},
+  {name:"尖沙咀K11 MUSEA", id:"R599"},
+  {name:"中環IFC", id:"R001"},
+  {name:"九龍塘又一城", id:"R017"},
+  {name:"沙田新城市廣場", id:"R020"},
+  {name:"觀塘apm", id:"R588"}
+];
+
+// iPhone Duo 零件編號（香港地區解鎖版）
+const PART_NUMBERS = {
+  white256:"MVX33ZP/A",
+  white512:"MVX34ZP/A",
+  black256:"MVX35ZP/A",
+  black512:"MVX36ZP/A"
+};
+
+// 香港庫存查詢API（Apple官方零售庫存介面）
+const API_URL_TPL = "https://www.apple.com/hk/shop/retail/pickup-message?pl=true&cppart=UNLOCKED/HK&parts={part}&store={storeid}";
+
+// ========== 全局變數 ==========
+let timer = null;
+let isRunning = false;
+let stockData = [];
+const logBox = document.getElementById("logBox");
+const tableBody = document.getElementById("stockTable");
+
+// ========== 日誌輸出 ==========
+function log(msg){
+  const now = new Date().toLocaleTimeString();
+  logBox.innerHTML += `[${now}] ${msg}\n`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ========== 瀏覽器通知 + 粵語語音警報 ==========
+function alertStock(){
+  // 桌面通知
+  if(Notification.permission === "granted"){
+    new Notification("iPhone Duo 有現貨！",{body:"門店已經出現庫存，馬上搶購！"});
+  }else{
+    Notification.requestPermission();
+  }
+  // 粵語語音播報
+  const voice = new SpeechSynthesisUtterance("iPhone Duo 有現貨！");
+  voice.lang = "zh-HK";
+  voice.rate = 1.1;
+  speechSynthesis.speak(voice);
+}
+
+// ========== 單一機型查詢庫存 ==========
+async function checkPart(partCode, storeId){
+  const url = API_URL_TPL.replace("{part}",partCode).replace("{storeid}",storeId);
+  try{
+    const res = await fetch(url,{
+      headers:{
+        "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome 120.0.0.0 Safari/537.36",
+        "Referer":"https://www.apple.com/hk/shop/buy-iphone/iphone-duo"
+      }
+    });
+    const json = await res.json();
+    // 解析庫存：available=有貨
+    return json.body?.stores?.[0]?.partsAvailability?.[partCode]?.pickupAvailability === "AVAILABLE";
+  }catch(err){
+    log(`查詢失敗 ${partCode}：${err.message}`);
+    return null;
+  }
+}
+
+// ========== 輪詢主程序 ==========
+async function runCheck(){
+  log("開始掃描全香港門店庫存……");
+  stockData = [];
+  let hasStock = false;
+
+  for(const store of STORE_LIST){
+    const w256 = await checkPart(PART_NUMBERS.white256, store.id);
+    const w512 = await checkPart(PART_NUMBERS.white512, store.id);
+    const b256 = await checkPart(PART_NUMBERS.black256, store.id);
+    const b512 = await checkPart(PART_NUMBERS.black512, store.id);
+
+    stockData.push({
+      storeName:store.name,
+      w256, w512, b256, b512,
+      updateTime:new Date().toLocaleTimeString()
+    });
+
+    // 只要任一機型有貨就觸發警報
+    if(w256 || w512 || b256 || b512) hasStock = true;
+  }
+
+  // 刷新表格
+  renderTable();
+
+  // 觸發警報
+  if(hasStock){
+    log("✅ 偵測到現貨！觸發警報！");
+    alertStock();
+  }else{
+    log("❌ 全部門店暫無庫存");
+  }
+}
+
+// ========== 渲染庫存表格 ==========
+function renderTable(){
+  tableBody.innerHTML = "";
+  stockData.forEach(row=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.storeName}</td>
+      <td class="${row.w256 ? 'instock' : 'outstock'}">${row.w256 ? '有貨' : '無貨'}</td>
+      <td class="${row.w512 ? 'instock' : 'outstock'}">${row.w512 ? '有貨' : '無貨'}</td>
+      <td class="${row.b256 ? 'instock' : 'outstock'}">${row.b256 ? '有貨' : '無貨'}</td>
+      <td class="${row.b512 ? 'instock' : 'outstock'}">${row.b512 ? '有貨' : '無貨'}</td>
+      <td>${row.updateTime}</td>
+    `;
+    tableBody.appendChild(tr);
+  })
+}
+
+// ========== 啟動/停止按鈕 ==========
+document.getElementById("startBtn").onclick = ()=>{
+  if(isRunning) return;
+  isRunning = true;
+  document.getElementById("statusText").innerText = "監控中……";
+  const sec = Number(document.getElementById("intervalSec").value);
+  timer = setInterval(runCheck, sec * 1000);
+  runCheck();
+};
+
+document.getElementById("stopBtn").onclick = ()=>{
+  clearInterval(timer);
+  isRunning = false;
+  document.getElementById("statusText").innerText = "已停止";
+  log("監控已手動停止");
+};
+
+// 預先請求通知權限
+Notification.requestPermission();
+</script>
+</body>
+</html>
